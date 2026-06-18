@@ -1,5 +1,6 @@
 const { app, BrowserWindow, shell, ipcMain, nativeTheme } = require('electron')
 const path = require('path')
+const { autoUpdater } = require('electron-updater')
 const { startServer } = require('../server/index')
 
 const isDev = process.env.NODE_ENV === 'development'
@@ -52,6 +53,20 @@ app.on('window-all-closed', () => {
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow()
 })
+
+// Auto-updater
+autoUpdater.autoDownload = false
+autoUpdater.autoInstallOnAppQuit = false
+
+autoUpdater.on('update-available',     (info)     => mainWindow?.webContents.send('update-available', info))
+autoUpdater.on('update-not-available', ()         => mainWindow?.webContents.send('update-not-available'))
+autoUpdater.on('download-progress',    (progress) => mainWindow?.webContents.send('update-progress', progress))
+autoUpdater.on('update-downloaded',    (info)     => mainWindow?.webContents.send('update-downloaded', info))
+autoUpdater.on('error',                (err)      => mainWindow?.webContents.send('update-error', err.message))
+
+ipcMain.handle('updater-check',    () => autoUpdater.checkForUpdates())
+ipcMain.handle('updater-download', () => autoUpdater.downloadUpdate())
+ipcMain.handle('updater-install',  () => autoUpdater.quitAndInstall(false, true))
 
 // IPC handlers
 ipcMain.handle('get-server-port', () => serverPort)

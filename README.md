@@ -6,11 +6,9 @@ A personal ebook library manager for Windows. Scan your local EPUB/MOBI/FB2 coll
 
 - **Library scanning** — indexes EPUB, MOBI, and FB2 files; fast incremental re-scans
 - **Metadata enrichment** — fetches cover art, genres, and canonical author names from Open Library
-- **Reading tracker** — status (read / reading / want to read), ratings, notes, start/finish dates
 - **Series & tags** — organise books by series, custom tags, and language
 - **Insights** — reading stats and charts via a dedicated analytics view
 - **Mobile access** — scan the QR code in Preferences to browse your library from a phone or tablet on the same Wi-Fi
-- **StoryGraph import/export** — CSV round-trip with StoryGraph reading history
 - **Local-only** — all data is stored as plain JSON in `%APPDATA%\ShelfMind\`; no accounts, no cloud
 
 ## Prerequisites
@@ -42,6 +40,15 @@ The default path in the code is `E:\Books` — change it to match your setup bef
 | `npm run dev` | Electron + Vite dev server with hot reload |
 | `npm run build` | Build the React frontend into `dist/` |
 | `npm run dist` | Full build → Windows NSIS installer + portable `.exe` in `release/` |
+| `npm run release` | Build + publish a new release to GitHub Releases (requires `GH_TOKEN`) |
+
+### Publishing a release
+
+1. Bump `version` in `package.json` (e.g. `1.2.0` → `1.3.0`)
+2. Set your GitHub token: `$env:GH_TOKEN = "ghp_yourtoken"` (needs `repo` scope)
+3. Run `npm run release` — builds the installer, creates a GitHub Release, uploads the files and `latest.yml`
+
+Users running the installed app will see an update prompt in **Preferences → Updates** next time they check.
 
 ## Project structure
 

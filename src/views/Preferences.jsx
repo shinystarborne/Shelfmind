@@ -78,6 +78,101 @@ function ImportExportSection({ toast }) {
   )
 }
 
+function UpdaterSection() {
+  const [version, setVersion]     = useState('')
+  const [status, setStatus]       = useState('idle')
+  const [updateInfo, setUpdateInfo] = useState(null)
+  const [progress, setProgress]   = useState(0)
+  const [errorMsg, setErrorMsg]   = useState('')
+
+  const api = window.electronAPI
+
+  useEffect(() => {
+    if (!api) return
+    api.getAppVersion().then(setVersion)
+    api.onUpdateAvailable(info  => { setUpdateInfo(info); setStatus('available') })
+    api.onUpdateNotAvailable(()  => setStatus('up-to-date'))
+    api.onUpdateProgress(p       => { setProgress(Math.round(p.percent)); setStatus('downloading') })
+    api.onUpdateDownloaded(info  => { setUpdateInfo(info); setStatus('ready') })
+    api.onUpdateError(msg        => { setErrorMsg(msg); setStatus('error') })
+    return () => api.removeUpdateListeners()
+  }, [])
+
+  if (!api) return null
+
+  const check = async () => {
+    setStatus('checking')
+    setErrorMsg('')
+    try {
+      await api.checkForUpdates()
+    } catch (err) {
+      setStatus('error')
+      setErrorMsg(err.message?.includes('packaged') ? 'Updates only work in the installed app, not dev mode.' : err.message)
+    }
+  }
+
+  return (
+    <div className="prefs-section">
+      <h3>⬆️ Updates</h3>
+      <div className="pref-row" style={{ marginBottom: 16 }}>
+        <div className="pref-label">Current version</div>
+        <div className="pref-hint">v{version}</div>
+      </div>
+
+      {status === 'idle' && (
+        <button className="btn btn-secondary" onClick={check}>Check for Updates</button>
+      )}
+      {status === 'checking' && (
+        <p style={{ fontSize: 13, color: 'var(--text-soft)' }}>
+          <span className="spin">↻</span> Checking…
+        </p>
+      )}
+      {status === 'up-to-date' && (
+        <div>
+          <p style={{ fontSize: 13, color: 'var(--sage-dark)', marginBottom: 8 }}>✓ You're on the latest version.</p>
+          <button className="btn btn-secondary" onClick={check}>Check Again</button>
+        </div>
+      )}
+      {status === 'available' && (
+        <div>
+          <p style={{ fontSize: 13, color: 'var(--text-soft)', marginBottom: 8 }}>
+            v{updateInfo?.version} is available.
+          </p>
+          <button className="btn btn-primary" onClick={() => { api.downloadUpdate(); setStatus('downloading') }}>
+            Download Update
+          </button>
+        </div>
+      )}
+      {status === 'downloading' && (
+        <div>
+          <p style={{ fontSize: 13, color: 'var(--text-soft)', marginBottom: 8 }}>Downloading… {progress}%</p>
+          <div className="enrich-bar">
+            <div className="enrich-bar-fill" style={{ width: `${progress}%` }} />
+          </div>
+        </div>
+      )}
+      {status === 'ready' && (
+        <div>
+          <p style={{ fontSize: 13, color: 'var(--sage-dark)', marginBottom: 8 }}>
+            v{updateInfo?.version} downloaded and ready to install.
+          </p>
+          <button className="btn btn-primary" onClick={() => api.installUpdate()}>
+            Restart &amp; Install
+          </button>
+        </div>
+      )}
+      {status === 'error' && (
+        <div>
+          <p style={{ fontSize: 13, color: '#c0392b', marginBottom: 8 }}>
+            {errorMsg || 'Update check failed.'}
+          </p>
+          <button className="btn btn-secondary" onClick={check}>Try Again</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Preferences({ onSave }) {
   const { toast } = useApp()
   const [prefs, setPrefs] = useState({})
@@ -256,6 +351,9 @@ export default function Preferences({ onSave }) {
 
         {/* Import / Export */}
         <ImportExportSection toast={toast} />
+
+        {/* Updates */}
+        <UpdaterSection />
 
         {/* Mobile / QR */}
         <div className="prefs-section">
