@@ -76,7 +76,8 @@
     "publish": {
       "provider": "github",
       "owner": "shinystarborne",
-      "repo": "Shelfmind"
+      "repo": "Shelfmind",
+      "releaseType": "release"
     }
   }
 }

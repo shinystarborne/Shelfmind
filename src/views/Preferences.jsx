@@ -53,8 +53,21 @@ function UpdaterSection() {
     try {
       await api.checkForUpdates()
     } catch (err) {
-      setStatus('error')
-      setErrorMsg(err.message?.includes('packaged') ? 'Updates only work in the installed app, not dev mode.' : err.message)
+      const msg = err.message || ''
+      if (msg.includes('No published versions') || msg.includes('Unable to find latest') || msg.includes('Cannot parse')) {
+        setStatus('error')
+        setErrorMsg('No valid release found on GitHub. Make sure the release is published (not a draft) and was built with "npm run release".')
+      } else if (msg.includes('latest.yml')) {
+        setStatus('error')
+        setErrorMsg('Release is missing update metadata. Publish using "npm run release" so latest.yml is included.')
+      } else if (msg.includes('packaged') || msg.includes('packed')) {
+        setStatus('error')
+        setErrorMsg('Updates only work in the installed app, not dev mode.')
+      } else {
+        setStatus('error')
+        setErrorMsg('Update check failed.')
+        console.error('[updater]', msg)
+      }
     }
   }
 
