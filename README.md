@@ -42,18 +42,46 @@ The default path in the code is `E:\Books` — change it to match your setup bef
 | `npm run dist` | Full build → Windows NSIS installer + portable `.exe` in `release/` |
 | `npm run release` | Build + publish a new release to GitHub Releases (requires `GH_TOKEN`) |
 
-### Publishing a release
+### Publishing a release — step by step
 
-1. Bump the version with npm (pick one):
-   ```powershell
-   npm version patch   # 1.2.1 → 1.2.2  (bug fixes)
-   npm version minor   # 1.2.1 → 1.3.0  (new features)
-   npm version major   # 1.2.1 → 2.0.0  (breaking changes)
-   ```
-2. Set your GitHub token: `$env:GH_TOKEN = "ghp_yourtoken"` (needs `repo` scope)
-3. Run `npm run release` — builds the installer, creates a GitHub Release, uploads the files and `latest.yml`
+**1. Make sure everything is committed**
+```powershell
+git status   # should be clean before bumping
+```
 
-Users running the installed app will see an update prompt in **Preferences → Updates** next time they check.
+**2. Bump the version**
+```powershell
+npm version patch   # bug fix:   1.2.3 → 1.2.4
+npm version minor   # feature:   1.2.3 → 1.3.0
+npm version major   # breaking:  1.2.3 → 2.0.0
+```
+This edits `package.json`, commits, and creates a git tag automatically.
+
+**3. Push the version commit and tag**
+```powershell
+git push
+git push --tags
+```
+
+**4. Set your GitHub token for this terminal session**
+```powershell
+$env:GH_TOKEN = "ghp_yourtoken"
+```
+Generate one at **github.com/settings/tokens → Generate new token (classic)** with the `repo` scope.
+Never commit this token — set it only in the terminal, never in code or config files.
+
+**5. Build and publish**
+```powershell
+npm run release
+```
+This builds the installer, creates a GitHub Release tagged `v{version}`, and uploads the `.exe` files and `latest.yml`.
+
+**6. Clear the token**
+```powershell
+$env:GH_TOKEN = ""
+```
+
+Users running the installed app will see an update prompt in **Preferences → Updates** the next time they check.
 
 ## Project structure
 
