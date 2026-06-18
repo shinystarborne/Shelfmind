@@ -1,13 +1,9 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { API, useApp } from '../App'
 import LibraryImportModal from '../components/LibraryImportModal'
 
-// ── Import / Export section ───────────────────────────────────────────────────
-function ImportExportSection({ toast }) {
-  const [importing, setImporting] = useState(false)
-  const [importResult, setImportResult] = useState(null)
-  const fileRef = useRef(null)
-
+// ── Export section ────────────────────────────────────────────────────────────
+function ExportSection() {
   const doExport = () => {
     const a = document.createElement('a')
     a.href = `${API}/export/storygraph`
@@ -15,64 +11,15 @@ function ImportExportSection({ toast }) {
     a.click()
   }
 
-  const doImport = async () => {
-    const file = fileRef.current?.files?.[0]
-    if (!file) { toast('Select a CSV file first'); return }
-    setImporting(true)
-    setImportResult(null)
-    try {
-      const text = await file.text()
-      const res = await fetch(`${API}/import/storygraph`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain' },
-        body: text,
-      }).then(r => r.json())
-      setImportResult(res)
-      toast(`Import done: ${res.matched} matched, ${res.unmatched} unmatched`, 'success')
-    } catch {
-      toast('Import failed', 'error')
-    } finally {
-      setImporting(false)
-    }
-  }
-
   return (
     <div className="prefs-section">
-      <h3>📤 Import / Export</h3>
-
+      <h3>📤 Export</h3>
       <div className="pref-row">
         <div className="pref-label">Export to StoryGraph</div>
         <div className="pref-hint">Download your library as a StoryGraph-compatible CSV file.</div>
         <button className="btn btn-secondary" style={{ alignSelf: 'flex-start', marginTop: 4 }} onClick={doExport}>
           ⬇️ Export CSV
         </button>
-      </div>
-
-      <div className="pref-row" style={{ marginTop: 8 }}>
-        <div className="pref-label">Import from StoryGraph</div>
-        <div className="pref-hint">
-          Upload a StoryGraph export CSV. Matches books by title + author and imports status, rating, tags, and finish date.
-        </div>
-        <div className="import-row">
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".csv,text/csv"
-            className="pref-input"
-          />
-          <button
-            className="btn btn-secondary"
-            onClick={doImport}
-            disabled={importing}
-          >
-            {importing ? <span className="spin">↻</span> : '⬆️'} Import
-          </button>
-        </div>
-        {importResult && (
-          <div style={{ fontSize: 12, marginTop: 8, color: 'var(--sage-dark)' }}>
-            ✓ {importResult.matched} books matched and updated · {importResult.unmatched} unmatched out of {importResult.total} total
-          </div>
-        )}
       </div>
     </div>
   )
@@ -349,8 +296,8 @@ export default function Preferences({ onSave }) {
           />
         )}
 
-        {/* Import / Export */}
-        <ImportExportSection toast={toast} />
+        {/* Export */}
+        <ExportSection />
 
         {/* Updates */}
         <UpdaterSection />

@@ -44,7 +44,12 @@ The default path in the code is `E:\Books` — change it to match your setup bef
 
 ### Publishing a release
 
-1. Bump `version` in `package.json` (e.g. `1.2.0` → `1.3.0`)
+1. Bump the version with npm (pick one):
+   ```powershell
+   npm version patch   # 1.2.1 → 1.2.2  (bug fixes)
+   npm version minor   # 1.2.1 → 1.3.0  (new features)
+   npm version major   # 1.2.1 → 2.0.0  (breaking changes)
+   ```
 2. Set your GitHub token: `$env:GH_TOKEN = "ghp_yourtoken"` (needs `repo` scope)
 3. Run `npm run release` — builds the installer, creates a GitHub Release, uploads the files and `latest.yml`
 
