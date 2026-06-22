@@ -124,6 +124,61 @@ function startServer(port = 3001) {
       }
     })
 
+    // ── Rename file on disk using current metadata ─────────────────────────────
+
+    function buildRenameTarget(book) {
+      const sanitize = (s) => (s || '').replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim()
+      const title  = sanitize(book.title  || 'Unknown Title')
+      const author = sanitize(book.author_canonical || book.author || '')
+      const series = sanitize(book.series_name || '')
+      const num    = book.series_num != null ? String(book.series_num) : ''
+      const ext    = path.extname(book.path)
+
+      let base
+      if (author && series) {
+        base = `${author} - ${series}${num ? ' ' + num : ''} - ${title}`
+      } else if (author) {
+        base = `${author} - ${title}`
+      } else {
+        base = title
+      }
+
+      // Truncate to 200 chars (leave room for ext + collision suffix)
+      if (base.length > 200) base = base.slice(0, 200).trimEnd()
+
+      return { base, ext, dir: path.dirname(book.path) }
+    }
+
+    app.get('/api/books/:id/rename-preview', (req, res) => {
+      const book = store.getBook(req.params.id)
+      if (!book) return res.status(404).json({ error: 'Not found' })
+      const { base, ext } = buildRenameTarget(book)
+      const currentName = path.basename(book.path)
+      const newName     = base + ext
+      res.json({ currentName, newName, unchanged: currentName === newName })
+    })
+
+    app.post('/api/books/:id/rename-file', (req, res) => {
+      const book = store.getBook(req.params.id)
+      if (!book) return res.status(404).json({ error: 'Not found' })
+      const { base, ext, dir } = buildRenameTarget(book)
+      let newPath = path.join(dir, base + ext)
+
+      if (newPath === book.path) {
+        return res.json({ ok: true, unchanged: true, newName: path.basename(newPath) })
+      }
+      if (fs.existsSync(newPath)) {
+        newPath = path.join(dir, `${base}_${Date.now()}${ext}`)
+      }
+      try {
+        fs.renameSync(book.path, newPath)
+        store.updateBookPath(book.id, newPath)
+        res.json({ ok: true, newPath, newName: path.basename(newPath), oldPath: book.path })
+      } catch (err) {
+        res.status(500).json({ ok: false, error: err.message })
+      }
+    })
+
     // Write metadata back to the actual epub file
     app.post('/api/books/:id/write-file', (req, res) => {
       const book = store.getBook(req.params.id)
@@ -384,6 +439,45 @@ function startServer(port = 3001) {
       }
 
       res.json({ matched, unmatched, total: rows.length })
+    })
+
+    // ── Reading Lists ──────────────────────────────────────────────────────────
+
+    app.get('/api/lists', (_, res) => res.json(store.getLists()))
+
+    app.post('/api/lists', (req, res) => {
+      const { name, description } = req.body
+      if (!name?.trim()) return res.status(400).json({ error: 'name required' })
+      res.json(store.createList(name.trim(), description || ''))
+    })
+
+    app.get('/api/lists/:id', (req, res) => {
+      const list = store.getList(req.params.id)
+      if (!list) return res.status(404).json({ error: 'Not found' })
+      res.json(list)
+    })
+
+    app.put('/api/lists/:id', (req, res) => {
+      const list = store.updateList(req.params.id, req.body)
+      if (!list) return res.status(404).json({ error: 'Not found' })
+      res.json(list)
+    })
+
+    app.delete('/api/lists/:id', (req, res) => {
+      if (!store.deleteList(req.params.id)) return res.status(404).json({ error: 'Not found' })
+      res.json({ ok: true })
+    })
+
+    app.post('/api/lists/:id/books', (req, res) => {
+      const { bookId } = req.body
+      if (!bookId) return res.status(400).json({ error: 'bookId required' })
+      if (!store.addBookToList(req.params.id, bookId)) return res.status(404).json({ error: 'List not found' })
+      res.json({ ok: true })
+    })
+
+    app.delete('/api/lists/:id/books/:bookId', (req, res) => {
+      if (!store.removeBookFromList(req.params.id, req.params.bookId)) return res.status(404).json({ error: 'List not found' })
+      res.json({ ok: true })
     })
 
     // ── QR Code ────────────────────────────────────────────────────────────────

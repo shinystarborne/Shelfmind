@@ -197,6 +197,7 @@ function BulkBar({ selectedIds, onClear, onAction, toast }) {
   const count = selectedIds.length
   const [tagInput, setTagInput] = useState('')
   const [showTagInput, setShowTagInput] = useState(false)
+  const [confirmRemove, setConfirmRemove] = useState(false)
 
   const doStatus = async (status) => {
     await fetch(`${API}/bulk`, {
@@ -223,13 +224,13 @@ function BulkBar({ selectedIds, onClear, onAction, toast }) {
   }
 
   const doRemove = async () => {
-    if (!window.confirm(`Mark ${count} book${count > 1 ? 's' : ''} as removed?`)) return
     await fetch(`${API}/bulk`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids: selectedIds, action: 'remove' }),
     })
     toast(`${count} book${count > 1 ? 's' : ''} removed`, 'success')
+    setConfirmRemove(false)
     onAction()
   }
 
@@ -255,8 +256,50 @@ function BulkBar({ selectedIds, onClear, onAction, toast }) {
       ) : (
         <button className="btn btn-secondary" onClick={() => setShowTagInput(true)}>🏷️ Add Tag</button>
       )}
-      <button className="btn btn-ghost" style={{ color: '#c04040' }} onClick={doRemove}>🗑️ Remove</button>
+      {confirmRemove ? (
+        <>
+          <span style={{ fontSize: 12, color: '#c04040' }}>Remove {count} book{count > 1 ? 's' : ''}?</span>
+          <button className="btn btn-ghost" style={{ color: '#c04040' }} onClick={doRemove}>Yes, remove</button>
+          <button className="btn btn-ghost" onClick={() => setConfirmRemove(false)}>Cancel</button>
+        </>
+      ) : (
+        <button className="btn btn-ghost" style={{ color: '#c04040' }} onClick={() => setConfirmRemove(true)}>🗑️ Remove</button>
+      )}
       <button className="btn btn-ghost" style={{ marginLeft: 'auto' }} onClick={onClear}>✕ Deselect all</button>
+    </div>
+  )
+}
+
+// ── Grouped section (by-author / by-series) ───────────────────────────────────
+function GroupSection({ name, books, selectedId, selectMode, selectedIds, onCheck, onCardClick }) {
+  return (
+    <div style={{ marginBottom: 36 }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 10,
+        marginBottom: 14, paddingBottom: 8,
+        borderBottom: '1.5px solid var(--border)',
+      }}>
+        <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>{name}</span>
+        <span style={{
+          fontSize: 11, fontWeight: 600, color: 'var(--text-muted)',
+          background: 'var(--cream-dark)', borderRadius: 10, padding: '2px 8px',
+        }}>
+          {books.length}
+        </span>
+      </div>
+      <div className="books-grid">
+        {books.map(book => (
+          <BookCard
+            key={book.id}
+            book={book}
+            selected={selectedId === book.id}
+            onClick={b => !selectMode && onCardClick(b.id === selectedId ? null : b.id)}
+            selectable={selectMode}
+            checked={selectedIds.includes(book.id)}
+            onCheck={onCheck}
+          />
+        ))}
+      </div>
     </div>
   )
 }
@@ -372,6 +415,55 @@ export default function Library() {
     return result
   }, [books, search, sort, fuse, tagFilter, showDupsOnly, dupIds])
 
+  const groupedByAuthor = useMemo(() => {
+    if (view !== 'by-author') return null
+    const groups = {}
+    for (const book of filtered) {
+      const author = book.author_canonical || book.author || 'Unknown'
+      if (!groups[author]) groups[author] = []
+      groups[author].push(book)
+    }
+    return Object.entries(groups)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([name, books]) => ({
+        name,
+        books: [...books].sort((a, b) => {
+          const sa = a.series_name || '', sb = b.series_name || ''
+          if (sa !== sb) return sa.localeCompare(sb)
+          const na = a.series_num ?? Infinity, nb = b.series_num ?? Infinity
+          if (na !== nb) return na - nb
+          return a.title.localeCompare(b.title)
+        }),
+      }))
+  }, [filtered, view])
+
+  const groupedBySeries = useMemo(() => {
+    if (view !== 'by-series') return null
+    const seriesMap = {}
+    const standalone = []
+    for (const book of filtered) {
+      if (!book.series_name) { standalone.push(book); continue }
+      if (!seriesMap[book.series_name]) seriesMap[book.series_name] = []
+      seriesMap[book.series_name].push(book)
+    }
+    const groups = Object.entries(seriesMap)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([name, books]) => ({
+        name,
+        books: [...books].sort((a, b) => {
+          const na = a.series_num ?? Infinity, nb = b.series_num ?? Infinity
+          return na !== nb ? na - nb : a.title.localeCompare(b.title)
+        }),
+      }))
+    if (standalone.length) {
+      groups.push({
+        name: 'Standalone',
+        books: [...standalone].sort((a, b) => a.title.localeCompare(b.title)),
+      })
+    }
+    return groups
+  }, [filtered, view])
+
   const setFilter = (key, val) =>
     setFilters(f => ({ ...f, [key]: f[key] === val ? '' : val }))
 
@@ -451,14 +543,16 @@ export default function Library() {
             onChange={e => setSearch(e.target.value)}
           />
         </div>
-        <select
-          className="btn btn-ghost"
-          style={{ fontWeight: 400, fontSize: 13 }}
-          value={sort}
-          onChange={e => setSort(e.target.value)}
-        >
-          {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
+        {(view === 'grid' || view === 'list') && (
+          <select
+            className="btn btn-ghost"
+            style={{ fontWeight: 400, fontSize: 13 }}
+            value={sort}
+            onChange={e => setSort(e.target.value)}
+          >
+            {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        )}
         <button
           className={`btn ${selectMode ? 'btn-primary' : 'btn-ghost'}`}
           style={{ fontSize: 12, padding: '6px 12px' }}
@@ -474,8 +568,10 @@ export default function Library() {
           title="Reload library"
         >↻</button>
         <div className="view-toggle">
-          <button className={view === 'grid' ? 'active' : ''} onClick={() => saveView('grid')} title="Grid">▦</button>
-          <button className={view === 'list' ? 'active' : ''} onClick={() => saveView('list')} title="List">☰</button>
+          <button className={view === 'grid'      ? 'active' : ''} onClick={() => saveView('grid')}      title="Grid">▦</button>
+          <button className={view === 'list'      ? 'active' : ''} onClick={() => saveView('list')}      title="List">☰</button>
+          <button className={view === 'by-author' ? 'active' : ''} onClick={() => saveView('by-author')} title="By Author">A</button>
+          <button className={view === 'by-series' ? 'active' : ''} onClick={() => saveView('by-series')} title="By Series">#</button>
         </div>
       </div>
 
@@ -626,7 +722,7 @@ export default function Library() {
                     />
                   ))}
                 </div>
-              ) : (
+              ) : view === 'list' ? (
                 <div className="books-list">
                   {filtered.map(book => (
                     <BookListItem
@@ -640,6 +736,32 @@ export default function Library() {
                     />
                   ))}
                 </div>
+              ) : view === 'by-author' ? (
+                groupedByAuthor.map(({ name, books }) => (
+                  <GroupSection
+                    key={name}
+                    name={name}
+                    books={books}
+                    selectedId={selectedId}
+                    selectMode={selectMode}
+                    selectedIds={selectedIds}
+                    onCheck={handleCheck}
+                    onCardClick={setSelectedId}
+                  />
+                ))
+              ) : (
+                groupedBySeries.map(({ name, books }) => (
+                  <GroupSection
+                    key={name}
+                    name={name}
+                    books={books}
+                    selectedId={selectedId}
+                    selectMode={selectMode}
+                    selectedIds={selectedIds}
+                    onCheck={handleCheck}
+                    onCardClick={setSelectedId}
+                  />
+                ))
               )}
             </>
           )}

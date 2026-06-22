@@ -1,15 +1,26 @@
-const { app, BrowserWindow, shell, ipcMain, nativeTheme } = require('electron')
+const _electron = require('electron')
+console.log('[DEBUG] electron module type:', typeof _electron, Object.keys(_electron || {}).slice(0, 5))
+const { app, BrowserWindow, shell, ipcMain, nativeTheme } = _electron
 const path = require('path')
-const { autoUpdater } = require('electron-updater')
-const { startServer } = require('../server/index')
 
 const isDev = process.env.NODE_ENV === 'development'
-const PORT = 3001
+const PORT  = 3001
 
 let mainWindow
 let serverPort = PORT
+let autoUpdater = null
+
+// electron-updater only works in a packaged app, not in dev
+if (!isDev) {
+  try {
+    autoUpdater = require('electron-updater').autoUpdater
+    autoUpdater.autoDownload = false
+    autoUpdater.autoInstallOnAppQuit = false
+  } catch {}
+}
 
 async function createWindow() {
+  const { startServer } = require('../server/index')
   const actualPort = await startServer(PORT)
   serverPort = actualPort
 
@@ -35,12 +46,26 @@ async function createWindow() {
   })
 
   mainWindow.once('ready-to-show', () => mainWindow.show())
+  setTimeout(() => { if (mainWindow && !mainWindow.isVisible()) mainWindow.show() }, 4000)
+
+  mainWindow.webContents.on('did-fail-load', (event, code, desc, url) => {
+    console.error('[LOAD FAIL]', code, desc, url)
+    mainWindow.show()
+  })
 
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173')
     // mainWindow.webContents.openDevTools()
   } else {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'))
+  }
+
+  if (autoUpdater) {
+    autoUpdater.on('update-available',     (info)     => mainWindow?.webContents.send('update-available', info))
+    autoUpdater.on('update-not-available', ()         => mainWindow?.webContents.send('update-not-available'))
+    autoUpdater.on('download-progress',    (progress) => mainWindow?.webContents.send('update-progress', progress))
+    autoUpdater.on('update-downloaded',    (info)     => mainWindow?.webContents.send('update-downloaded', info))
+    autoUpdater.on('error',                (err)      => mainWindow?.webContents.send('update-error', err.message))
   }
 }
 
@@ -54,19 +79,9 @@ app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow()
 })
 
-// Auto-updater
-autoUpdater.autoDownload = false
-autoUpdater.autoInstallOnAppQuit = false
-
-autoUpdater.on('update-available',     (info)     => mainWindow?.webContents.send('update-available', info))
-autoUpdater.on('update-not-available', ()         => mainWindow?.webContents.send('update-not-available'))
-autoUpdater.on('download-progress',    (progress) => mainWindow?.webContents.send('update-progress', progress))
-autoUpdater.on('update-downloaded',    (info)     => mainWindow?.webContents.send('update-downloaded', info))
-autoUpdater.on('error',                (err)      => mainWindow?.webContents.send('update-error', err.message))
-
-ipcMain.handle('updater-check',    () => autoUpdater.checkForUpdates())
-ipcMain.handle('updater-download', () => autoUpdater.downloadUpdate())
-ipcMain.handle('updater-install',  () => autoUpdater.quitAndInstall(false, true))
+ipcMain.handle('updater-check',    () => autoUpdater?.checkForUpdates())
+ipcMain.handle('updater-download', () => autoUpdater?.downloadUpdate())
+ipcMain.handle('updater-install',  () => autoUpdater?.quitAndInstall(false, true))
 
 // IPC handlers
 ipcMain.handle('get-server-port', () => serverPort)

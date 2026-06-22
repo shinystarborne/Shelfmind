@@ -32,10 +32,12 @@ class Store {
     this._booksFile  = path.join(dataDir, 'books.json')
     this._statesFile = path.join(dataDir, 'states.json')
     this._prefsFile  = path.join(dataDir, 'prefs.json')
+    this._listsFile  = path.join(dataDir, 'lists.json')
 
     this.books  = readJson(this._booksFile,  [])
     this.states = readJson(this._statesFile, {})
     this.prefs  = readJson(this._prefsFile,  {})
+    this.lists  = readJson(this._listsFile,  [])
 
     // Seed default prefs
     const defaults = {
@@ -259,11 +261,14 @@ class Store {
   // ── Duplicates ───────────────────────────────────────────────────────────────
   getDuplicates() {
     function norm(s) {
-      return (s || '').toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim()
+      return (s || '').toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, ' ').trim()
     }
     const groups = {}
     for (const b of this.books.filter(b => !b.removed)) {
-      const key = norm(b.title) + '|' + norm(b.author_canonical || b.author)
+      const normTitle  = norm(b.title)
+      const normAuthor = norm(b.author_canonical || b.author)
+      if (!normTitle && !normAuthor) continue
+      const key = normTitle + '|' + normAuthor
       if (!groups[key]) groups[key] = []
       groups[key].push(this._attachState(b))
     }
@@ -484,12 +489,85 @@ class Store {
     )
   }
 
+  updateBookPath(bookId, newPath) {
+    const b = this._byId.get(bookId)
+    if (!b) return null
+    this._byPath.delete(b.path)
+    b.path = newPath
+    this._byPath.set(newPath, b)
+    writeJson(this._booksFile, this.books)
+    return b
+  }
+
   removeBook(bookId) {
     const b = this._byId.get(bookId)
     if (!b) return null
     b.removed = true
     writeJson(this._booksFile, this.books)
     return b
+  }
+
+  // ── Reading Lists ─────────────────────────────────────────────────────────────
+  getLists() {
+    return this.lists.map(l => ({ ...l, book_count: l.book_ids.length }))
+  }
+
+  getList(id) {
+    const l = this.lists.find(l => l.id === id)
+    if (!l) return null
+    const books = l.book_ids
+      .map(bid => this._byId.get(bid))
+      .filter(Boolean)
+      .filter(b => !b.removed)
+      .map(b => this._attachState(b))
+    return { ...l, books }
+  }
+
+  createList(name, description = '') {
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2)
+    const now = Math.floor(Date.now() / 1000)
+    const list = { id, name, description, book_ids: [], created_at: now, updated_at: now }
+    this.lists.push(list)
+    writeJson(this._listsFile, this.lists)
+    return list
+  }
+
+  updateList(id, fields) {
+    const l = this.lists.find(l => l.id === id)
+    if (!l) return null
+    if (fields.name        !== undefined) l.name        = fields.name
+    if (fields.description !== undefined) l.description = fields.description
+    l.updated_at = Math.floor(Date.now() / 1000)
+    writeJson(this._listsFile, this.lists)
+    return l
+  }
+
+  deleteList(id) {
+    const idx = this.lists.findIndex(l => l.id === id)
+    if (idx === -1) return false
+    this.lists.splice(idx, 1)
+    writeJson(this._listsFile, this.lists)
+    return true
+  }
+
+  addBookToList(listId, bookId) {
+    const l = this.lists.find(l => l.id === listId)
+    if (!l) return false
+    if (!l.book_ids.includes(bookId)) {
+      l.book_ids.push(bookId)
+      l.updated_at = Math.floor(Date.now() / 1000)
+      writeJson(this._listsFile, this.lists)
+    }
+    return true
+  }
+
+  removeBookFromList(listId, bookId) {
+    const l = this.lists.find(l => l.id === listId)
+    if (!l) return false
+    l.book_ids = l.book_ids.filter(id => id !== bookId)
+    l.updated_at = Math.floor(Date.now() / 1000)
+    writeJson(this._listsFile, this.lists)
+    return true
   }
 }
 

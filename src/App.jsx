@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, createContext, useContext } from 'rea
 import Library from './views/Library'
 import Insights from './views/Insights'
 import Preferences from './views/Preferences'
+import ReadingList from './views/ReadingList'
 
 // When loaded in Electron (file://) hostname is empty — fall back to localhost.
 // When opened in a browser via QR code the hostname is the LAN IP, so API calls go to the right machine.
@@ -73,6 +74,24 @@ export default function App() {
   const [_refreshLibraryFn, _setRefreshLibraryFn] = useState(() => () => {})
   const setRefreshLibrary = useCallback(fn => _setRefreshLibraryFn(() => fn), [])
   const refreshLibrary    = useCallback(() => _refreshLibraryFn(), [_refreshLibraryFn])
+  const [lists, setLists] = useState([])
+  const [activeListId, setActiveListId] = useState(null)
+
+  const loadLists = useCallback(() => {
+    fetch(`${API}/lists`).then(r => r.json()).then(setLists).catch(() => {})
+  }, [])
+
+  const createList = async () => {
+    const name = 'New List'
+    const list = await fetch(`${API}/lists`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    }).then(r => r.json())
+    loadLists()
+    setActiveListId(list.id)
+    setView('list')
+  }
 
   const toast = useCallback((msg, type = '') => {
     const id = Date.now()
@@ -94,6 +113,7 @@ export default function App() {
         window.electronAPI?.setTheme(theme)
       }).catch(() => {})
       fetch(`${API}/books`).then(r => r.json()).then(b => setBookCount(b.length)).catch(() => {})
+      fetch(`${API}/lists`).then(r => r.json()).then(setLists).catch(() => {})
     }
     init()
   }, [])
@@ -155,6 +175,34 @@ export default function App() {
 
             <div className="divider" style={{ margin: '0 16px' }} />
 
+            <nav className="nav-section" style={{ flex: 1, overflowY: 'auto' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: 4 }}>
+                <div className="nav-section-label">Reading Lists</div>
+                <button
+                  className="btn btn-ghost"
+                  style={{ fontSize: 16, padding: '0 4px', lineHeight: 1, color: 'var(--text-muted)' }}
+                  title="New list"
+                  onClick={createList}
+                >+</button>
+              </div>
+              {lists.map(l => (
+                <button
+                  key={l.id}
+                  className={`nav-item ${view === 'list' && activeListId === l.id ? 'active' : ''}`}
+                  onClick={() => { setActiveListId(l.id); setView('list') }}
+                >
+                  <span className="nav-icon">📋</span>
+                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.name}</span>
+                  <span className="nav-badge">{l.book_count}</span>
+                </button>
+              ))}
+              {lists.length === 0 && (
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', padding: '4px 8px' }}>No lists yet</div>
+              )}
+            </nav>
+
+            <div className="divider" style={{ margin: '0 16px' }} />
+
             <nav className="nav-section">
               <button
                 className={`nav-item ${view === 'preferences' ? 'active' : ''}`}
@@ -183,6 +231,13 @@ export default function App() {
           {view === 'library'     && <Library />}
           {view === 'insights'    && <Insights />}
           {view === 'preferences' && <Preferences onSave={refreshPrefs} />}
+          {view === 'list' && activeListId && (
+            <ReadingList
+              listId={activeListId}
+              onListDeleted={() => { loadLists(); setView('library'); setActiveListId(null) }}
+              onListUpdated={loadLists}
+            />
+          )}
         </main>
 
         {/* Mobile bottom nav */}
