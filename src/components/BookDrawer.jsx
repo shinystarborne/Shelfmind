@@ -220,6 +220,81 @@ function EditPanel({ book, onSave, onClose }) {
   )
 }
 
+// ── Rename file confirmation ──────────────────────────────────────────────────
+function RenameConfirm({ book, onConfirm, onCancel }) {
+  const [busy,    setBusy]    = useState(false)
+  const [preview, setPreview] = useState(null)
+  const { toast } = useApp()
+
+  useEffect(() => {
+    fetch(`${API}/books/${book.id}/rename-preview`)
+      .then(r => r.json())
+      .then(setPreview)
+      .catch(() => toast('Could not compute new filename'))
+  }, [book.id])
+
+  const confirm = async () => {
+    setBusy(true)
+    try {
+      const res = await fetch(`${API}/books/${book.id}/rename-file`, { method: 'POST' }).then(r => r.json())
+      if (res.ok) {
+        if (res.unchanged) toast('Filename already matches metadata')
+        else toast(`Renamed to: ${res.newName}`, 'success')
+        onConfirm()
+      } else {
+        toast(`Error: ${res.error}`, 'error')
+        setBusy(false)
+      }
+    } catch {
+      toast('Could not rename file')
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div style={{
+      background: 'var(--cream-dark)',
+      border: '1.5px solid var(--border)',
+      borderRadius: 'var(--radius-md)',
+      padding: '14px 16px',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 10,
+    }}>
+      <div style={{ fontSize: 13, fontWeight: 700 }}>Rename file to match metadata?</div>
+      {!preview ? (
+        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Computing new name…</div>
+      ) : preview.unchanged ? (
+        <div style={{ fontSize: 12, color: 'var(--text-soft)' }}>
+          The filename already matches the metadata — no rename needed.
+        </div>
+      ) : (
+        <div style={{ fontSize: 12, color: 'var(--text-soft)', lineHeight: 1.6 }}>
+          <div style={{ marginBottom: 4 }}>
+            <span style={{ color: 'var(--text-muted)' }}>Current: </span>
+            <code style={{ fontSize: 11, wordBreak: 'break-all' }}>{preview.currentName}</code>
+          </div>
+          <div>
+            <span style={{ color: 'var(--text-muted)' }}>New: </span>
+            <code style={{ fontSize: 11, wordBreak: 'break-all' }}>{preview.newName}</code>
+          </div>
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button
+          className="btn btn-primary"
+          style={{ flex: 1 }}
+          onClick={confirm}
+          disabled={busy || !preview || preview.unchanged}
+        >
+          {busy ? <span className="spin">↻</span> : '✏️'} Rename
+        </button>
+        <button className="btn btn-ghost" onClick={onCancel}>Cancel</button>
+      </div>
+    </div>
+  )
+}
+
 // ── Remove confirmation ───────────────────────────────────────────────────────
 function RemoveConfirm({ book, onConfirm, onCancel }) {
   const [busy, setBusy] = useState(false)
@@ -377,6 +452,7 @@ export default function BookDrawer({ bookId, onClose, onStatusChange, onRemoved 
   const [showKindle,  setShowKindle]  = useState(false)
   const [showEdit,    setShowEdit]    = useState(false)
   const [showRemove,  setShowRemove]  = useState(false)
+  const [showRename,  setShowRename]  = useState(false)
   const [enriching,   setEnriching]   = useState(false)
   const [uploading,    setUploading]    = useState(false)
   const [epubImages,   setEpubImages]   = useState(null)   // null=hidden, []=loading, [{...}]=loaded
@@ -391,7 +467,7 @@ export default function BookDrawer({ bookId, onClose, onStatusChange, onRemoved 
       })
   }, [bookId])
 
-  useEffect(() => { load(); setShowEdit(false); setShowRemove(false) }, [load])
+  useEffect(() => { load(); setShowEdit(false); setShowRemove(false); setShowRename(false) }, [load])
 
   useEffect(() => {
     if (!noteDirty) return
@@ -703,6 +779,19 @@ export default function BookDrawer({ bookId, onClose, onStatusChange, onRemoved 
                 <button className="btn btn-ghost" onClick={() => { navigator.clipboard.writeText(book.path); toast('Path copied') }}>
                   📋 Copy File Path
                 </button>
+                <button
+                  className="btn btn-ghost"
+                  onClick={() => { setShowRename(r => !r); setShowRemove(false) }}
+                >
+                  🔤 Rename File…
+                </button>
+                {showRename && (
+                  <RenameConfirm
+                    book={book}
+                    onConfirm={() => { load(); setShowRename(false) }}
+                    onCancel={() => setShowRename(false)}
+                  />
+                )}
 
                 <div className="divider" />
 
