@@ -3,6 +3,7 @@ import Library from './views/Library'
 import Insights from './views/Insights'
 import Preferences from './views/Preferences'
 import ReadingList from './views/ReadingList'
+import PdfTab from './views/PdfTab'
 
 // When loaded in Electron (file://) hostname is empty — fall back to localhost.
 // When opened in a browser via QR code the hostname is the LAN IP, so API calls go to the right machine.
@@ -15,11 +16,14 @@ export const AppCtx = createContext(null)
 export const useApp = () => useContext(AppCtx)
 
 // ── Toast system ──────────────────────────────────────────────────────────────
-function Toasts({ toasts }) {
+function Toasts({ toasts, onDismiss }) {
   return (
     <div className="toast-wrap">
       {toasts.map(t => (
-        <div key={t.id} className={`toast ${t.type || ''}`}>{t.msg}</div>
+        <div key={t.id} className={`toast ${t.type || ''}`}>
+          <span>{t.msg}</span>
+          <button className="toast-close" title="Dismiss" onClick={() => onDismiss(t.id)}>✕</button>
+        </div>
       ))}
     </div>
   )
@@ -76,9 +80,15 @@ export default function App() {
   const refreshLibrary    = useCallback(() => _refreshLibraryFn(), [_refreshLibraryFn])
   const [lists, setLists] = useState([])
   const [activeListId, setActiveListId] = useState(null)
+  const [pdfTabs, setPdfTabs] = useState([])
+  const [activePdfTabId, setActivePdfTabId] = useState(null)
 
   const loadLists = useCallback(() => {
     fetch(`${API}/lists`).then(r => r.json()).then(setLists).catch(() => {})
+  }, [])
+
+  const loadPdfTabs = useCallback(() => {
+    fetch(`${API}/pdf-tabs`).then(r => r.json()).then(setPdfTabs).catch(() => {})
   }, [])
 
   const createList = async () => {
@@ -94,9 +104,13 @@ export default function App() {
   }
 
   const toast = useCallback((msg, type = '') => {
-    const id = Date.now()
+    const id = Date.now() + Math.random()
     setToasts(ts => [...ts, { id, msg, type }])
-    setTimeout(() => setToasts(ts => ts.filter(t => t.id !== id)), 3500)
+    setTimeout(() => setToasts(ts => ts.filter(t => t.id !== id)), 3000)
+  }, [])
+
+  const dismissToast = useCallback((id) => {
+    setToasts(ts => ts.filter(t => t.id !== id))
   }, [])
 
   useEffect(() => {
@@ -114,6 +128,7 @@ export default function App() {
       }).catch(() => {})
       fetch(`${API}/books`).then(r => r.json()).then(b => setBookCount(b.length)).catch(() => {})
       fetch(`${API}/lists`).then(r => r.json()).then(setLists).catch(() => {})
+      fetch(`${API}/pdf-tabs`).then(r => r.json()).then(setPdfTabs).catch(() => {})
     }
     init()
   }, [])
@@ -138,7 +153,7 @@ export default function App() {
   const refreshPrefs = () => fetch(`${API}/preferences`).then(r => r.json()).then(setPrefs)
 
   return (
-    <AppCtx.Provider value={{ toast, prefs, refreshPrefs, toggleTheme, refreshLibrary, setRefreshLibrary }}>
+    <AppCtx.Provider value={{ toast, prefs, refreshPrefs, toggleTheme, refreshLibrary, setRefreshLibrary, pdfTabs, loadPdfTabs }}>
       <div className={`app-shell${sidebarOpen ? '' : ' sidebar-collapsed'}`}>
         {/* Sidebar */}
         <aside className="sidebar">
@@ -193,11 +208,28 @@ export default function App() {
                 >
                   <span className="nav-icon">📋</span>
                   <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.name}</span>
-                  <span className="nav-badge">{l.book_count}</span>
+                  <span className="nav-badge">{l.book_count + (l.pdf_count || 0)}</span>
                 </button>
               ))}
               {lists.length === 0 && (
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', padding: '4px 8px' }}>No lists yet</div>
+              )}
+
+              {pdfTabs.length > 0 && (
+                <>
+                  <div className="nav-section-label" style={{ marginTop: 12 }}>PDF Tabs</div>
+                  {pdfTabs.map(t => (
+                    <button
+                      key={t.id}
+                      className={`nav-item ${view === 'pdftab' && activePdfTabId === t.id ? 'active' : ''}`}
+                      onClick={() => { setActivePdfTabId(t.id); setView('pdftab') }}
+                    >
+                      <span className="nav-icon">📄</span>
+                      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</span>
+                      <span className="nav-badge">{t.doc_count}</span>
+                    </button>
+                  ))}
+                </>
               )}
             </nav>
 
@@ -238,6 +270,13 @@ export default function App() {
               onListUpdated={loadLists}
             />
           )}
+          {view === 'pdftab' && activePdfTabId && (
+            <PdfTab
+              tabId={activePdfTabId}
+              onTabDeleted={() => { loadPdfTabs(); setView('library'); setActivePdfTabId(null) }}
+              onTabUpdated={loadPdfTabs}
+            />
+          )}
         </main>
 
         {/* Mobile bottom nav */}
@@ -259,7 +298,7 @@ export default function App() {
         </nav>
       </div>
 
-      <Toasts toasts={toasts} />
+      <Toasts toasts={toasts} onDismiss={dismissToast} />
     </AppCtx.Provider>
   )
 }

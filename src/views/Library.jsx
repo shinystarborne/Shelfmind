@@ -19,15 +19,24 @@ const STATUS_FILTERS = [
   { value: 'dnf',      label: '🚫 DNF' },
 ]
 
-const LANG_FILTERS = [
-  { value: 'en', label: '🇬🇧 English' },
-  { value: 'ru', label: '🇷🇺 Russian' },
-]
+// Flag emoji for common language codes; anything else falls back to 🌐
+const LANG_FLAGS = {
+  en: '🇬🇧', ru: '🇷🇺', de: '🇩🇪', fr: '🇫🇷', es: '🇪🇸', it: '🇮🇹', pt: '🇵🇹', nl: '🇳🇱',
+  pl: '🇵🇱', uk: '🇺🇦', ja: '🇯🇵', zh: '🇨🇳', ko: '🇰🇷', sv: '🇸🇪', no: '🇳🇴', da: '🇩🇰',
+  fi: '🇫🇮', cs: '🇨🇿', tr: '🇹🇷', ar: '🇸🇦', he: '🇮🇱', hi: '🇮🇳', el: '🇬🇷', hu: '🇭🇺',
+  ro: '🇷🇴', bg: '🇧🇬', sr: '🇷🇸', be: '🇧🇾', kk: '🇰🇿', ka: '🇬🇪', lv: '🇱🇻', lt: '🇱🇹', et: '🇪🇪',
+}
 
-const FORMAT_FILTERS = ['epub', 'mobi', 'fb2']
+function langLabel(code) {
+  let name
+  try { name = new Intl.DisplayNames(['en'], { type: 'language' }).of(code) } catch { /* bad code */ }
+  if (!name || name === code) name = code.toUpperCase()
+  else name = name[0].toUpperCase() + name.slice(1)
+  return `${LANG_FLAGS[code] || '🌐'} ${name}`
+}
 
 // ── Enrich progress bar ───────────────────────────────────────────────────────
-function EnrichBar({ state, onStart }) {
+function EnrichBar({ state, onStart, onDismiss }) {
   const pct = state.total > 0 ? Math.round((state.current / state.total) * 100) : 0
 
   if (state.done) return (
@@ -38,7 +47,7 @@ function EnrichBar({ state, onStart }) {
           ? 'All books already enriched'
           : `Enrichment done — ${state.success}/${state.total} books updated`}
       </span>
-      <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+      <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
         <button
           className="btn btn-ghost"
           style={{ padding: '3px 10px', fontSize: 11 }}
@@ -55,6 +64,12 @@ function EnrichBar({ state, onStart }) {
         >
           ↻ Re-enrich all
         </button>
+        <button
+          className="btn btn-ghost"
+          style={{ padding: '3px 8px', fontSize: 11 }}
+          onClick={onDismiss}
+          title="Dismiss"
+        >✕</button>
       </div>
     </div>
   )
@@ -319,6 +334,7 @@ export default function Library() {
   const [selectedId, setSelectedId] = useState(null)
   const [authors, setAuthors]       = useState([])
   const [series, setSeries]         = useState([])
+  const [languages, setLanguages]   = useState([])
   const [allTags, setAllTags]       = useState([])
   const [enrichState, setEnrichState] = useState({ running: false, done: false, current: 0, total: 0, success: 0 })
   const [selectMode, setSelectMode] = useState(false)
@@ -350,14 +366,15 @@ export default function Library() {
     fetch(`${API}/meta/authors`).then(r => r.json()).then(setAuthors).catch(() => {})
     fetch(`${API}/meta/series`).then(r => r.json()).then(setSeries).catch(() => {})
     fetch(`${API}/meta/tags`).then(r => r.json()).then(setAllTags).catch(() => {})
+    fetch(`${API}/meta/languages`).then(r => r.json()).then(setLanguages).catch(() => {})
     fetch(`${API}/duplicates`).then(r => r.json()).then(setDuplicates).catch(() => {})
   }, [])
 
-  // Check if enrichment is already running when page loads
+  // Check if enrichment is already running when page loads.
+  // Deliberately don't restore a stale "done" state — that banner used to stick forever.
   useEffect(() => {
     fetch(`${API}/enrich/status`).then(r => r.json()).then(s => {
       if (s.running) { setEnrichState(s); startEnrichPoll() }
-      else if (s.done && s.total > 0) setEnrichState(s)
     }).catch(() => {})
   }, [])
 
@@ -494,6 +511,10 @@ export default function Library() {
         clearInterval(enrichPollRef.current)
         enrichPollRef.current = null
         loadBooks()
+        // Auto-dismiss the "done" banner back to the idle prompt after 3s
+        setTimeout(() => {
+          setEnrichState(es => es.running ? es : { running: false, done: false, current: 0, total: 0, success: 0 })
+        }, 3000)
       }
     }, 1500)
   }
@@ -576,7 +597,11 @@ export default function Library() {
       </div>
 
       {/* Enrich progress banner */}
-      <EnrichBar state={enrichState} onStart={handleEnrichAll} />
+      <EnrichBar
+        state={enrichState}
+        onStart={handleEnrichAll}
+        onDismiss={() => setEnrichState({ running: false, done: false, current: 0, total: 0, success: 0 })}
+      />
 
       {/* Yearly goal bar */}
       {goal > 0 && (
@@ -615,29 +640,21 @@ export default function Library() {
           </button>
         ))}
 
-        <div style={{ width: 1, background: 'var(--border)', flexShrink: 0 }} />
-
-        {LANG_FILTERS.map(f => (
-          <button
-            key={f.value}
-            className={`filter-chip ${filters.language === f.value ? 'active' : ''}`}
-            onClick={() => setFilter('language', f.value)}
-          >
-            {f.label}
-          </button>
-        ))}
-
-        <div style={{ width: 1, background: 'var(--border)', flexShrink: 0 }} />
-
-        {FORMAT_FILTERS.map(f => (
-          <button
-            key={f}
-            className={`filter-chip ${filters.format === f ? 'active' : ''}`}
-            onClick={() => setFilter('format', f)}
-          >
-            {f.toUpperCase()}
-          </button>
-        ))}
+        {languages.length > 0 && (
+          <>
+            <div style={{ width: 1, background: 'var(--border)', flexShrink: 0 }} />
+            {languages.slice(0, 10).map(l => (
+              <button
+                key={l.code}
+                className={`filter-chip ${filters.language === l.code ? 'active' : ''}`}
+                onClick={() => setFilter('language', l.code)}
+                title={`${l.count} book${l.count !== 1 ? 's' : ''}`}
+              >
+                {langLabel(l.code)}
+              </button>
+            ))}
+          </>
+        )}
 
         <div style={{ width: 1, background: 'var(--border)', flexShrink: 0 }} />
 

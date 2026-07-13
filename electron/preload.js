@@ -4,6 +4,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   showItemInFolder: (filePath) => ipcRenderer.invoke('show-item-in-folder', filePath),
   openFile: (filePath) => ipcRenderer.invoke('open-file', filePath),
+  pickPdfFiles: () => ipcRenderer.invoke('pick-pdf-files'),
+  pickFolder: () => ipcRenderer.invoke('pick-folder'),
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   getPlatform: () => ipcRenderer.invoke('get-platform'),
   setTheme: (theme) => ipcRenderer.invoke('set-theme', theme),

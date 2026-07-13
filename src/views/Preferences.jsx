@@ -25,6 +25,103 @@ function ExportSection() {
   )
 }
 
+// ── PDF Tabs management ───────────────────────────────────────────────────────
+function PdfTabsSection() {
+  const { toast, loadPdfTabs } = useApp()
+  const [tabs, setTabs]         = useState([])
+  const [newName, setNewName]   = useState('')
+  const [drafts, setDrafts]     = useState({})
+  const [confirmId, setConfirmId] = useState(null)
+
+  const load = () => fetch(`${API}/pdf-tabs`).then(r => r.json()).then(setTabs).catch(() => {})
+  useEffect(() => { load() }, [])
+
+  const refresh = () => { load(); loadPdfTabs() }
+
+  const createTab = async () => {
+    const name = newName.trim()
+    if (!name) return
+    setNewName('')
+    await fetch(`${API}/pdf-tabs`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ name }),
+    })
+    toast(`Tab "${name}" created`, 'success')
+    refresh()
+  }
+
+  const renameTab = async (tab) => {
+    const name = (drafts[tab.id] ?? '').trim()
+    setDrafts(d => { const { [tab.id]: _, ...rest } = d; return rest })
+    if (!name || name === tab.name) return
+    await fetch(`${API}/pdf-tabs/${tab.id}`, {
+      method:  'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ name }),
+    })
+    refresh()
+  }
+
+  const deleteTab = async (tab) => {
+    setConfirmId(null)
+    await fetch(`${API}/pdf-tabs/${tab.id}`, { method: 'DELETE' })
+    toast(`Tab "${tab.name}" deleted`, 'success')
+    refresh()
+  }
+
+  return (
+    <div className="prefs-section">
+      <h3>📄 PDF Tabs</h3>
+      <p style={{ fontSize: 13, color: 'var(--text-soft)', marginBottom: 16, lineHeight: 1.6 }}>
+        Create tabs to organise your PDF documents — they show up in the sidebar.
+        Each tab holds its own set of PDFs with tags and notes.
+      </p>
+
+      {tabs.map(tab => (
+        <div key={tab.id} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+          <input
+            className="pref-input"
+            style={{ flex: 1, marginBottom: 0 }}
+            value={drafts[tab.id] ?? tab.name}
+            onChange={e => setDrafts(d => ({ ...d, [tab.id]: e.target.value }))}
+            onKeyDown={e => { if (e.key === 'Enter') renameTab(tab) }}
+            onBlur={() => { if (tab.id in drafts) renameTab(tab) }}
+          />
+          <span style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+            {tab.doc_count} PDF{tab.doc_count !== 1 ? 's' : ''}
+          </span>
+          {confirmId === tab.id ? (
+            <>
+              <button className="btn btn-ghost" style={{ color: '#c04040', fontSize: 12 }} onClick={() => deleteTab(tab)}>Delete?</button>
+              <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => setConfirmId(null)}>✕</button>
+            </>
+          ) : (
+            <button
+              className="btn btn-ghost"
+              style={{ color: '#c04040', fontSize: 12 }}
+              title="Delete tab (files stay on disk)"
+              onClick={() => setConfirmId(tab.id)}
+            >🗑️</button>
+          )}
+        </div>
+      ))}
+
+      <div style={{ display: 'flex', gap: 8, marginTop: tabs.length ? 12 : 0 }}>
+        <input
+          className="pref-input"
+          style={{ flex: 1, marginBottom: 0 }}
+          placeholder="New tab name (e.g. Sheet Music, Manuals)…"
+          value={newName}
+          onChange={e => setNewName(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') createTab() }}
+        />
+        <button className="btn btn-secondary" onClick={createTab} disabled={!newName.trim()}>+ Create Tab</button>
+      </div>
+    </div>
+  )
+}
+
 function UpdaterSection() {
   const [version, setVersion]     = useState('')
   const [status, setStatus]       = useState('idle')
@@ -308,6 +405,9 @@ export default function Preferences({ onSave }) {
             onClose={() => setShowLibImport(false)}
           />
         )}
+
+        {/* PDF Tabs */}
+        <PdfTabsSection />
 
         {/* Export */}
         <ExportSection />

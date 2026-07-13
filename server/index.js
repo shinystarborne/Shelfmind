@@ -291,6 +291,7 @@ function startServer(port = 3001) {
     app.get('/api/meta/authors', (_, res) => res.json(store.getAuthors()))
     app.get('/api/meta/series',  (_, res) => res.json(store.getSeries()))
     app.get('/api/meta/tags',    (_, res) => res.json(store.getAllTags()))
+    app.get('/api/meta/languages', (_, res) => res.json(store.getLanguages()))
 
     // ── Library MD Import ─────────────────────────────────────────────────────
 
@@ -477,6 +478,102 @@ function startServer(port = 3001) {
 
     app.delete('/api/lists/:id/books/:bookId', (req, res) => {
       if (!store.removeBookFromList(req.params.id, req.params.bookId)) return res.status(404).json({ error: 'List not found' })
+      res.json({ ok: true })
+    })
+
+    app.post('/api/lists/:id/pdfs', (req, res) => {
+      const { docId } = req.body
+      if (!docId) return res.status(400).json({ error: 'docId required' })
+      if (!store.addPdfToList(req.params.id, docId)) return res.status(404).json({ error: 'List or PDF not found' })
+      res.json({ ok: true })
+    })
+
+    app.delete('/api/lists/:id/pdfs/:docId', (req, res) => {
+      if (!store.removePdfFromList(req.params.id, req.params.docId)) return res.status(404).json({ error: 'List not found' })
+      res.json({ ok: true })
+    })
+
+    // ── PDF Tabs ───────────────────────────────────────────────────────────────
+
+    app.get('/api/pdf-tabs', (_, res) => res.json(store.getPdfTabs()))
+
+    app.post('/api/pdf-tabs', (req, res) => {
+      const { name } = req.body
+      if (!name?.trim()) return res.status(400).json({ error: 'name required' })
+      res.json(store.createPdfTab(name.trim()))
+    })
+
+    app.get('/api/pdf-tabs/:id', (req, res) => {
+      const tab = store.getPdfTab(req.params.id)
+      if (!tab) return res.status(404).json({ error: 'Not found' })
+      res.json(tab)
+    })
+
+    app.put('/api/pdf-tabs/:id', (req, res) => {
+      const folderPath = req.body.folder_path
+      if (folderPath && !fs.existsSync(folderPath)) {
+        return res.status(400).json({ error: `Folder not found: ${folderPath}` })
+      }
+      const tab = store.updatePdfTab(req.params.id, req.body)
+      if (!tab) return res.status(404).json({ error: 'Not found' })
+      res.json(tab)
+    })
+
+    // Import every PDF found in the tab's folder (recursive, deduped by path)
+    app.post('/api/pdf-tabs/:id/scan-folder', (req, res) => {
+      const tab = store.getPdfTab(req.params.id)
+      if (!tab) return res.status(404).json({ error: 'Not found' })
+      if (!tab.folder_path) return res.status(400).json({ error: 'This tab has no folder set' })
+      if (!fs.existsSync(tab.folder_path)) return res.status(400).json({ error: `Folder not found: ${tab.folder_path}` })
+
+      const pdfs = []
+      const walk = (dir, depth) => {
+        if (depth > 6) return
+        let entries
+        try { entries = fs.readdirSync(dir, { withFileTypes: true }) } catch { return }
+        for (const e of entries) {
+          if (e.name.startsWith('.')) continue
+          const full = path.join(dir, e.name)
+          if (e.isDirectory()) walk(full, depth + 1)
+          else if (e.isFile() && e.name.toLowerCase().endsWith('.pdf')) pdfs.push(full)
+        }
+      }
+      walk(tab.folder_path, 0)
+
+      const added = store.addPdfDocs(req.params.id, pdfs)
+      res.json({ ok: true, found: pdfs.length, added: added.length, skipped: pdfs.length - added.length })
+    })
+
+    app.delete('/api/pdf-tabs/:id', (req, res) => {
+      if (!store.deletePdfTab(req.params.id)) return res.status(404).json({ error: 'Not found' })
+      res.json({ ok: true })
+    })
+
+    app.post('/api/pdf-tabs/:id/docs', (req, res) => {
+      const { paths } = req.body
+      if (!Array.isArray(paths) || paths.length === 0) return res.status(400).json({ error: 'paths array required' })
+      const valid = []
+      const errors = []
+      for (const p of paths) {
+        if (typeof p !== 'string' || !p.toLowerCase().endsWith('.pdf')) { errors.push(`${p}: not a PDF`); continue }
+        if (!fs.existsSync(p)) { errors.push(`${path.basename(p)}: file not found`); continue }
+        valid.push(p)
+      }
+      const added = store.addPdfDocs(req.params.id, valid)
+      if (added === null) return res.status(404).json({ error: 'Tab not found' })
+      res.json({ ok: true, added: added.length, skipped: valid.length - added.length, errors })
+    })
+
+    app.get('/api/pdf-docs', (_, res) => res.json(store.getAllPdfDocs()))
+
+    app.put('/api/pdf-docs/:id', (req, res) => {
+      const doc = store.updatePdfDoc(req.params.id, req.body)
+      if (!doc) return res.status(404).json({ error: 'Not found' })
+      res.json(doc)
+    })
+
+    app.delete('/api/pdf-docs/:id', (req, res) => {
+      if (!store.deletePdfDoc(req.params.id)) return res.status(404).json({ error: 'Not found' })
       res.json({ ok: true })
     })
 

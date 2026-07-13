@@ -1,6 +1,6 @@
 const _electron = require('electron')
 console.log('[DEBUG] electron module type:', typeof _electron, Object.keys(_electron || {}).slice(0, 5))
-const { app, BrowserWindow, shell, ipcMain, nativeTheme } = _electron
+const { app, BrowserWindow, shell, ipcMain, nativeTheme, dialog } = _electron
 const path = require('path')
 
 const isDev = process.env.NODE_ENV === 'development'
@@ -88,6 +88,21 @@ ipcMain.handle('get-server-port', () => serverPort)
 ipcMain.handle('open-external', (_, url) => shell.openExternal(url))
 ipcMain.handle('show-item-in-folder', (_, filePath) => shell.showItemInFolder(filePath))
 ipcMain.handle('open-file', (_, filePath) => shell.openPath(filePath))
+ipcMain.handle('pick-folder', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Choose PDF folder',
+    properties: ['openDirectory'],
+  })
+  return result.canceled ? null : result.filePaths[0]
+})
+ipcMain.handle('pick-pdf-files', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Add PDFs',
+    filters: [{ name: 'PDF Documents', extensions: ['pdf'] }],
+    properties: ['openFile', 'multiSelections'],
+  })
+  return result.canceled ? [] : result.filePaths
+})
 ipcMain.handle('get-app-version', () => app.getVersion())
 ipcMain.handle('get-platform', () => process.platform)
 

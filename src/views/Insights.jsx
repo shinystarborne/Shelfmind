@@ -77,7 +77,6 @@ export default function Insights() {
   ]
 
   const langData = data.byLanguage.map((l, i) => ({ ...l, color: PALETTE[i % PALETTE.length] }))
-  const fmtData  = data.byFormat.map((f, i)  => ({ ...f, color: PALETTE[i % PALETTE.length] }))
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
@@ -174,29 +173,6 @@ export default function Insights() {
                   ))}
                 </Bar>
               </BarChart>
-            </ResponsiveContainer>
-          </div>
-
-          {/* Format breakdown */}
-          <div className="chart-card">
-            <h3>Formats</h3>
-            <ResponsiveContainer width="100%" height={220}>
-              <PieChart>
-                <Pie
-                  data={fmtData}
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={90}
-                  paddingAngle={3}
-                  dataKey="count"
-                  nameKey="format"
-                  label={({ format, percent }) => percent > 0.05 ? `${format?.toUpperCase()} ${(percent * 100).toFixed(0)}%` : ''}
-                  labelLine={false}
-                >
-                  {fmtData.map((d, i) => <Cell key={i} fill={d.color} />)}
-                </Pie>
-                <Tooltip content={<CustomTooltip />} />
-              </PieChart>
             </ResponsiveContainer>
           </div>
 
