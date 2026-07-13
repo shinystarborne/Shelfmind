@@ -75,7 +75,6 @@ export default function BookCard({ book, selected, onClick, selectable, checked,
           style={{ display: src ? 'none' : 'flex' }}
         >
           <div className="initials">{init}</div>
-          <div className="format-badge-cover">{book.format}</div>
         </div>
 
         <div className="book-meta">
@@ -89,7 +88,6 @@ export default function BookCard({ book, selected, onClick, selectable, checked,
                 {book.series_num ? `#${book.series_num}` : '📖'}
               </span>
             )}
-            <span className="badge badge-format">{book.format}</span>
           </div>
         </div>
       </div>
@@ -133,7 +131,6 @@ export function BookListItem({ book, selected, onClick, selectable, checked, onC
       <div className="book-list-meta">
         {book.rating && <span className="star-mini">{'★'.repeat(book.rating)}</span>}
         <span className={`badge badge-${status}`}>{status}</span>
-        <span className="badge badge-format">{book.format}</span>
       </div>
     </div>
   )

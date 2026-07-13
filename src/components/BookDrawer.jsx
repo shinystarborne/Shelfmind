@@ -745,8 +745,9 @@ export default function BookDrawer({ bookId, onClose, onStatusChange, onRemoved 
                     className="btn btn-primary"
                     style={{ background: 'var(--brown)', borderColor: 'var(--brown)' }}
                     onClick={() => window.electronAPI.openFile(book.path)}
+                    title="Open in your default reader app"
                   >
-                    📖 Open in Aquile Reader
+                    📖 Open
                   </button>
                 )}
                 <button className="btn btn-primary" onClick={() => setShowKindle(true)}>

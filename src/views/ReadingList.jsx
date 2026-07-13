@@ -73,6 +73,62 @@ function BookPicker({ listBookIds, onAdd, onClose }) {
   )
 }
 
+// ── PDF picker modal ──────────────────────────────────────────────────────────
+function PdfPicker({ listDocIds, onAdd, onClose }) {
+  const [allDocs, setAllDocs] = useState([])
+  const [search,  setSearch]  = useState('')
+
+  useEffect(() => {
+    fetch(`${API}/pdf-docs`).then(r => r.json()).then(setAllDocs).catch(() => {})
+  }, [])
+
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase()
+    return allDocs.filter(d => {
+      if (listDocIds.includes(d.id)) return false
+      if (!q) return true
+      return d.title.toLowerCase().includes(q) ||
+             (d.tab_name || '').toLowerCase().includes(q) ||
+             (d.tags || []).some(t => t.toLowerCase().includes(q))
+    })
+  }, [allDocs, search, listDocIds])
+
+  return (
+    <div className="picker-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="picker-panel">
+        <div className="picker-header">
+          <h3>Add PDFs to shelf</h3>
+          <button className="btn btn-ghost" onClick={onClose}>✕</button>
+        </div>
+        <input
+          className="search-input"
+          style={{ margin: '0 16px 12px', width: 'calc(100% - 32px)' }}
+          placeholder="Search title, tab, or tag…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          autoFocus
+        />
+        <div style={{ padding: '0 16px 16px', overflowY: 'auto', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {filtered.map(doc => (
+            <button key={doc.id} className="pdf-pick-row" onClick={() => onAdd(doc.id)}>
+              <span style={{ fontSize: 18 }}>📄</span>
+              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'left' }}>{doc.title}</span>
+              {doc.tab_name && <span className="nav-badge">{doc.tab_name}</span>}
+            </button>
+          ))}
+          {filtered.length === 0 && (
+            <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 32, fontSize: 13 }}>
+              {allDocs.length === 0
+                ? 'No PDFs in your library yet — add some in a PDF tab first.'
+                : search ? 'No PDFs match your search' : 'All PDFs are already on this shelf'}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Main view ─────────────────────────────────────────────────────────────────
 export default function ReadingList({ listId, onListDeleted, onListUpdated }) {
   const { toast } = useApp()
@@ -80,7 +136,8 @@ export default function ReadingList({ listId, onListDeleted, onListUpdated }) {
   const [editing,    setEditing]    = useState(false)
   const [editName,   setEditName]   = useState('')
   const [editDesc,   setEditDesc]   = useState('')
-  const [showPicker, setShowPicker] = useState(false)
+  const [showPicker,    setShowPicker]    = useState(false)
+  const [showPdfPicker, setShowPdfPicker] = useState(false)
   const [selectedId, setSelectedId] = useState(null)
   const [confirmDel, setConfirmDel] = useState(false)
 
@@ -127,6 +184,29 @@ export default function ReadingList({ listId, onListDeleted, onListUpdated }) {
     onListUpdated?.()
   }
 
+  const addPdf = async (docId) => {
+    await fetch(`${API}/lists/${listId}/pdfs`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ docId }),
+    })
+    loadList()
+    onListUpdated?.()
+  }
+
+  const removePdf = async (docId) => {
+    await fetch(`${API}/lists/${listId}/pdfs/${docId}`, { method: 'DELETE' })
+    toast('PDF removed from list', 'success')
+    loadList()
+    onListUpdated?.()
+  }
+
+  const openPdf = async (doc) => {
+    if (!window.electronAPI?.openFile) return
+    const err = await window.electronAPI.openFile(doc.path)
+    if (err) toast(`Could not open file: ${err}`, 'error')
+  }
+
   const deleteList = async () => {
     await fetch(`${API}/lists/${listId}`, { method: 'DELETE' })
     onListDeleted()
@@ -135,6 +215,9 @@ export default function ReadingList({ listId, onListDeleted, onListUpdated }) {
   if (!list) return <div className="empty-state"><div className="spin" style={{ fontSize: 32 }}>↻</div></div>
 
   const listBookIds = list.books.map(b => b.id)
+  const pdfDocs     = list.pdf_docs || []
+  const listDocIds  = pdfDocs.map(d => d.id)
+  const totalItems  = list.books.length + pdfDocs.length
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
@@ -171,9 +254,12 @@ export default function ReadingList({ listId, onListDeleted, onListUpdated }) {
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{list.description}</div>
               )}
             </div>
-            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{list.books.length} book{list.books.length !== 1 ? 's' : ''}</span>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+              {list.books.length} book{list.books.length !== 1 ? 's' : ''}{pdfDocs.length > 0 ? `, ${pdfDocs.length} PDF${pdfDocs.length !== 1 ? 's' : ''}` : ''}
+            </span>
             <button className="btn btn-ghost" style={{ fontSize: 12, padding: '4px 10px' }} onClick={startEdit}>✏️ Edit</button>
             <button className="btn btn-secondary" style={{ fontSize: 12, padding: '4px 12px' }} onClick={() => setShowPicker(true)}>+ Add books</button>
+            <button className="btn btn-secondary" style={{ fontSize: 12, padding: '4px 12px' }} onClick={() => setShowPdfPicker(true)}>+ Add PDFs</button>
             {confirmDel ? (
               <>
                 <span style={{ fontSize: 12, color: '#c04040' }}>Delete this list?</span>
@@ -190,32 +276,78 @@ export default function ReadingList({ listId, onListDeleted, onListUpdated }) {
       {/* Books grid */}
       <div className="library-body">
         <div className="books-area">
-          {list.books.length === 0 ? (
+          {totalItems === 0 ? (
             <div className="empty-state">
               <div className="empty-icon">📋</div>
-              <h3>This list is empty</h3>
-              <p>Click "+ Add books" to add books from your library.</p>
-              <button className="btn btn-secondary" style={{ marginTop: 12 }} onClick={() => setShowPicker(true)}>+ Add books</button>
+              <h3>This shelf is empty</h3>
+              <p>Add books from your library or PDFs from your PDF tabs.</p>
+              <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                <button className="btn btn-secondary" onClick={() => setShowPicker(true)}>+ Add books</button>
+                <button className="btn btn-secondary" onClick={() => setShowPdfPicker(true)}>+ Add PDFs</button>
+              </div>
             </div>
           ) : (
             <>
-              <div className="results-count">{list.books.length} book{list.books.length !== 1 ? 's' : ''}</div>
-              <div className="books-grid">
-                {list.books.map(book => (
-                  <div key={book.id} style={{ position: 'relative' }}>
-                    <BookCard
-                      book={book}
-                      selected={selectedId === book.id}
-                      onClick={b => setSelectedId(b.id === selectedId ? null : b.id)}
-                    />
-                    <button
-                      className="list-remove-btn"
-                      title="Remove from list"
-                      onClick={e => { e.stopPropagation(); removeBook(book.id) }}
-                    >✕</button>
+              {list.books.length > 0 && (
+                <>
+                  <div className="results-count">{list.books.length} book{list.books.length !== 1 ? 's' : ''}</div>
+                  <div className="books-grid">
+                    {list.books.map(book => (
+                      <div key={book.id} style={{ position: 'relative' }}>
+                        <BookCard
+                          book={book}
+                          selected={selectedId === book.id}
+                          onClick={b => setSelectedId(b.id === selectedId ? null : b.id)}
+                        />
+                        <button
+                          className="list-remove-btn"
+                          title="Remove from list"
+                          onClick={e => { e.stopPropagation(); removeBook(book.id) }}
+                        >✕</button>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </>
+              )}
+              {pdfDocs.length > 0 && (
+                <>
+                  <div className="results-count" style={{ marginTop: list.books.length > 0 ? 24 : 0 }}>
+                    {pdfDocs.length} PDF{pdfDocs.length !== 1 ? 's' : ''}
+                  </div>
+                  <div className="pdf-doc-list">
+                    {pdfDocs.map(doc => (
+                      <div key={doc.id} className={`pdf-doc-row ${doc.missing ? 'missing' : ''}`}>
+                        <div className="pdf-doc-icon" onDoubleClick={() => openPdf(doc)}>📄</div>
+                        <div className="pdf-doc-main">
+                          <div className="pdf-doc-title" style={{ cursor: 'default' }}>
+                            {doc.title}
+                            {doc.missing && <span className="pdf-doc-missing-badge">file not found</span>}
+                          </div>
+                          <div className="pdf-doc-path">
+                            {doc.tab_name && <span>in 📄 {doc.tab_name}</span>}
+                            {(doc.tags || []).length > 0 && <span> · {doc.tags.join(', ')}</span>}
+                          </div>
+                        </div>
+                        <div className="pdf-doc-actions">
+                          <button
+                            className="btn btn-secondary"
+                            style={{ fontSize: 12, padding: '4px 12px' }}
+                            onClick={() => openPdf(doc)}
+                            disabled={!window.electronAPI || doc.missing}
+                            title={window.electronAPI ? 'Open in your default PDF app' : 'Only available in the desktop app'}
+                          >Open</button>
+                          <button
+                            className="btn btn-ghost"
+                            style={{ color: '#c04040', fontSize: 12 }}
+                            title="Remove from shelf"
+                            onClick={() => removePdf(doc.id)}
+                          >✕</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
             </>
           )}
         </div>
@@ -226,6 +358,14 @@ export default function ReadingList({ listId, onListDeleted, onListUpdated }) {
           listBookIds={listBookIds}
           onAdd={async (bookId) => { await addBook(bookId) }}
           onClose={() => setShowPicker(false)}
+        />
+      )}
+
+      {showPdfPicker && (
+        <PdfPicker
+          listDocIds={listDocIds}
+          onAdd={async (docId) => { await addPdf(docId) }}
+          onClose={() => setShowPdfPicker(false)}
         />
       )}
 

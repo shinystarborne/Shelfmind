@@ -13,6 +13,21 @@ const path = require('path')
 const os   = require('os')
 
 // ── helpers ────────────────────────────────────────────────────────────────────
+// ISO 639-2 (three-letter, common in epub metadata) → ISO 639-1
+const LANG_ALIASES = {
+  eng: 'en', rus: 'ru', ger: 'de', deu: 'de', fre: 'fr', fra: 'fr', spa: 'es',
+  ita: 'it', por: 'pt', dut: 'nl', nld: 'nl', pol: 'pl', ukr: 'uk', jpn: 'ja',
+  chi: 'zh', zho: 'zh', kor: 'ko', swe: 'sv', nor: 'no', dan: 'da', fin: 'fi',
+  cze: 'cs', ces: 'cs', tur: 'tr', ara: 'ar', heb: 'he', hin: 'hi', gre: 'el',
+  ell: 'el', hun: 'hu', rum: 'ro', ron: 'ro', bul: 'bg', srp: 'sr', bel: 'be',
+  kaz: 'kk', kat: 'ka', geo: 'ka', lav: 'lv', lit: 'lt', est: 'et',
+}
+function normLangCode(raw) {
+  const code = (raw || '').toLowerCase().split(/[-_]/)[0].trim()
+  if (!code || code === 'und') return ''
+  return LANG_ALIASES[code] || code
+}
+
 function readJson(file, fallback) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')) }
   catch { return fallback }
@@ -29,15 +44,19 @@ class Store {
     fs.mkdirSync(this.dataDir,   { recursive: true })
     fs.mkdirSync(this.coversDir, { recursive: true })
 
-    this._booksFile  = path.join(dataDir, 'books.json')
-    this._statesFile = path.join(dataDir, 'states.json')
-    this._prefsFile  = path.join(dataDir, 'prefs.json')
-    this._listsFile  = path.join(dataDir, 'lists.json')
+    this._booksFile   = path.join(dataDir, 'books.json')
+    this._statesFile  = path.join(dataDir, 'states.json')
+    this._prefsFile   = path.join(dataDir, 'prefs.json')
+    this._listsFile   = path.join(dataDir, 'lists.json')
+    this._pdfTabsFile = path.join(dataDir, 'pdfTabs.json')
+    this._pdfDocsFile = path.join(dataDir, 'pdfDocs.json')
 
-    this.books  = readJson(this._booksFile,  [])
-    this.states = readJson(this._statesFile, {})
-    this.prefs  = readJson(this._prefsFile,  {})
-    this.lists  = readJson(this._listsFile,  [])
+    this.books   = readJson(this._booksFile,   [])
+    this.states  = readJson(this._statesFile,  {})
+    this.prefs   = readJson(this._prefsFile,   {})
+    this.lists   = readJson(this._listsFile,   [])
+    this.pdfTabs = readJson(this._pdfTabsFile, [])
+    this.pdfDocs = readJson(this._pdfDocsFile, [])
 
     // Seed default prefs
     const defaults = {
@@ -125,7 +144,10 @@ class Store {
     let result = this.books.filter(b => !b.removed)
 
     if (filters.format)   result = result.filter(b => b.format === filters.format)
-    if (filters.language) result = result.filter(b => (b.language || '').toLowerCase().startsWith(filters.language.toLowerCase()))
+    if (filters.language) {
+      const want = normLangCode(filters.language) || filters.language.toLowerCase()
+      result = result.filter(b => normLangCode(b.language) === want)
+    }
     if (filters.author)   result = result.filter(b => (b.author_canonical || b.author) === filters.author)
     if (filters.series)   result = result.filter(b => b.series_name === filters.series)
     if (filters.status) {
@@ -343,13 +365,18 @@ class Store {
     for (const b of books) { fm[b.format] = (fm[b.format] || 0) + 1 }
     const byFormat = Object.entries(fm).map(([format, count]) => ({ format, count })).sort((a, b) => b.count - a.count)
 
-    // Language
+    // Language — proper name for whatever languages the library actually has
     const lm = {}
+    let langNames = null
+    try { langNames = new Intl.DisplayNames(['en'], { type: 'language' }) } catch { /* no ICU */ }
     for (const b of books) {
-      let l = (b.language || '').toLowerCase()
-      if      (l.startsWith('en')) l = 'English'
-      else if (l.startsWith('ru')) l = 'Russian'
-      else if (!l)                  l = 'Unknown'
+      const code = normLangCode(b.language)
+      let l = 'Unknown'
+      if (code) {
+        try { l = langNames?.of(code) || code.toUpperCase() } catch { l = code.toUpperCase() }
+        if (l === code) l = code.toUpperCase()
+        else l = l[0].toUpperCase() + l.slice(1)
+      }
       lm[l] = (lm[l] || 0) + 1
     }
     const byLanguage = Object.entries(lm).map(([lang, count]) => ({ lang, count })).sort((a, b) => b.count - a.count)
@@ -412,6 +439,19 @@ class Store {
     return Object.entries(m)
       .map(([name, count]) => ({ name, count }))
       .sort((a, b) => a.name.localeCompare(b.name))
+  }
+
+  getLanguages() {
+    // Distinct primary language subtags ("en-US" → "en") with counts
+    const m = {}
+    for (const b of this.books.filter(b => !b.removed)) {
+      const code = normLangCode(b.language)
+      if (!code) continue // missing or "undetermined"
+      m[code] = (m[code] || 0) + 1
+    }
+    return Object.entries(m)
+      .map(([code, count]) => ({ code, count }))
+      .sort((a, b) => b.count - a.count || a.code.localeCompare(b.code))
   }
 
   // ── Enrichment ────────────────────────────────────────────────────────────────
@@ -507,9 +547,13 @@ class Store {
     return b
   }
 
-  // ── Reading Lists ─────────────────────────────────────────────────────────────
+  // ── Reading Lists (shelves — hold books and PDFs) ─────────────────────────────
   getLists() {
-    return this.lists.map(l => ({ ...l, book_count: l.book_ids.length }))
+    return this.lists.map(l => ({
+      ...l,
+      book_count: l.book_ids.length,
+      pdf_count:  (l.pdf_doc_ids || []).length,
+    }))
   }
 
   getList(id) {
@@ -520,13 +564,18 @@ class Store {
       .filter(Boolean)
       .filter(b => !b.removed)
       .map(b => this._attachState(b))
-    return { ...l, books }
+    const tabNames = new Map(this.pdfTabs.map(t => [t.id, t.name]))
+    const pdf_docs = (l.pdf_doc_ids || [])
+      .map(did => this.pdfDocs.find(d => d.id === did))
+      .filter(Boolean)
+      .map(d => ({ ...d, missing: !fs.existsSync(d.path), tab_name: tabNames.get(d.tab_id) || '' }))
+    return { ...l, books, pdf_docs }
   }
 
   createList(name, description = '') {
     const id = Date.now().toString(36) + Math.random().toString(36).slice(2)
     const now = Math.floor(Date.now() / 1000)
-    const list = { id, name, description, book_ids: [], created_at: now, updated_at: now }
+    const list = { id, name, description, book_ids: [], pdf_doc_ids: [], created_at: now, updated_at: now }
     this.lists.push(list)
     writeJson(this._listsFile, this.lists)
     return list
@@ -568,6 +617,140 @@ class Store {
     l.updated_at = Math.floor(Date.now() / 1000)
     writeJson(this._listsFile, this.lists)
     return true
+  }
+
+  addPdfToList(listId, docId) {
+    const l = this.lists.find(l => l.id === listId)
+    if (!l) return false
+    if (!this.pdfDocs.some(d => d.id === docId)) return false
+    if (!l.pdf_doc_ids) l.pdf_doc_ids = []
+    if (!l.pdf_doc_ids.includes(docId)) {
+      l.pdf_doc_ids.push(docId)
+      l.updated_at = Math.floor(Date.now() / 1000)
+      writeJson(this._listsFile, this.lists)
+    }
+    return true
+  }
+
+  removePdfFromList(listId, docId) {
+    const l = this.lists.find(l => l.id === listId)
+    if (!l) return false
+    l.pdf_doc_ids = (l.pdf_doc_ids || []).filter(id => id !== docId)
+    l.updated_at = Math.floor(Date.now() / 1000)
+    writeJson(this._listsFile, this.lists)
+    return true
+  }
+
+  _removePdfDocsFromLists(docIds) {
+    const gone = new Set(docIds)
+    let changed = false
+    for (const l of this.lists) {
+      if (!l.pdf_doc_ids?.some(id => gone.has(id))) continue
+      l.pdf_doc_ids = l.pdf_doc_ids.filter(id => !gone.has(id))
+      changed = true
+    }
+    if (changed) writeJson(this._listsFile, this.lists)
+  }
+
+  // ── PDF Tabs ──────────────────────────────────────────────────────────────────
+  getPdfTabs() {
+    return this.pdfTabs.map(t => ({
+      ...t,
+      doc_count: this.pdfDocs.filter(d => d.tab_id === t.id).length,
+    }))
+  }
+
+  getPdfTab(id) {
+    const t = this.pdfTabs.find(t => t.id === id)
+    if (!t) return null
+    const docs = this.pdfDocs
+      .filter(d => d.tab_id === id)
+      .map(d => ({ ...d, missing: !fs.existsSync(d.path) }))
+    return { ...t, docs }
+  }
+
+  createPdfTab(name) {
+    const id  = Date.now().toString(36) + Math.random().toString(36).slice(2)
+    const now = Math.floor(Date.now() / 1000)
+    const tab = { id, name, folder_path: '', created_at: now, updated_at: now }
+    this.pdfTabs.push(tab)
+    writeJson(this._pdfTabsFile, this.pdfTabs)
+    return tab
+  }
+
+  updatePdfTab(id, fields) {
+    const t = this.pdfTabs.find(t => t.id === id)
+    if (!t) return null
+    if (fields.name        !== undefined) t.name        = fields.name
+    if (fields.folder_path !== undefined) t.folder_path = fields.folder_path
+    t.updated_at = Math.floor(Date.now() / 1000)
+    writeJson(this._pdfTabsFile, this.pdfTabs)
+    return t
+  }
+
+  deletePdfTab(id) {
+    const idx = this.pdfTabs.findIndex(t => t.id === id)
+    if (idx === -1) return false
+    this.pdfTabs.splice(idx, 1)
+    const goneIds = this.pdfDocs.filter(d => d.tab_id === id).map(d => d.id)
+    this.pdfDocs = this.pdfDocs.filter(d => d.tab_id !== id)
+    writeJson(this._pdfTabsFile, this.pdfTabs)
+    writeJson(this._pdfDocsFile, this.pdfDocs)
+    this._removePdfDocsFromLists(goneIds)
+    return true
+  }
+
+  addPdfDocs(tabId, paths) {
+    const tab = this.pdfTabs.find(t => t.id === tabId)
+    if (!tab) return null
+    const now   = Math.floor(Date.now() / 1000)
+    const added = []
+    for (const p of paths) {
+      if (this.pdfDocs.some(d => d.tab_id === tabId && d.path === p)) continue
+      const id = Date.now().toString(36) + Math.random().toString(36).slice(2)
+      const doc = {
+        id,
+        tab_id:   tabId,
+        path:     p,
+        title:    path.basename(p, path.extname(p)),
+        tags:     [],
+        note:     '',
+        added_at: now,
+      }
+      this.pdfDocs.push(doc)
+      added.push(doc)
+    }
+    if (added.length) writeJson(this._pdfDocsFile, this.pdfDocs)
+    return added
+  }
+
+  getPdfDoc(id) {
+    return this.pdfDocs.find(d => d.id === id) || null
+  }
+
+  updatePdfDoc(id, fields) {
+    const d = this.pdfDocs.find(d => d.id === id)
+    if (!d) return null
+    if (fields.title  !== undefined) d.title = fields.title
+    if (fields.note   !== undefined) d.note  = fields.note
+    if (fields.tags   !== undefined) d.tags  = Array.isArray(fields.tags) ? fields.tags : []
+    if (fields.tab_id !== undefined && this.pdfTabs.some(t => t.id === fields.tab_id)) d.tab_id = fields.tab_id
+    writeJson(this._pdfDocsFile, this.pdfDocs)
+    return d
+  }
+
+  deletePdfDoc(id) {
+    const idx = this.pdfDocs.findIndex(d => d.id === id)
+    if (idx === -1) return false
+    this.pdfDocs.splice(idx, 1)
+    writeJson(this._pdfDocsFile, this.pdfDocs)
+    this._removePdfDocsFromLists([id])
+    return true
+  }
+
+  getAllPdfDocs() {
+    const tabNames = new Map(this.pdfTabs.map(t => [t.id, t.name]))
+    return this.pdfDocs.map(d => ({ ...d, tab_name: tabNames.get(d.tab_id) || '' }))
   }
 }
 
