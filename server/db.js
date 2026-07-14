@@ -28,6 +28,10 @@ function normLangCode(raw) {
   return LANG_ALIASES[code] || code
 }
 
+function normTitleAuthor(s) {
+  return (s || '').toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, ' ').trim()
+}
+
 function readJson(file, fallback) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')) }
   catch { return fallback }
@@ -97,6 +101,12 @@ class Store {
       if (fs.existsSync(f)) return `/covers/${bookId}.${ext}`
     }
     return null
+  }
+
+  // PDF thumbnails share the covers/ dir but use a "pdf-" prefix so they can
+  // never collide with a book id.
+  savePdfCover(docId, dataUrl) { return this.saveCover(`pdf-${docId}`, dataUrl) }
+  pdfCoverPath(docId)          { return this.coverPath(`pdf-${docId}`)
   }
 
   // ── Books ───────────────────────────────────────────────────────────────────
@@ -282,13 +292,10 @@ class Store {
 
   // ── Duplicates ───────────────────────────────────────────────────────────────
   getDuplicates() {
-    function norm(s) {
-      return (s || '').toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, ' ').trim()
-    }
     const groups = {}
     for (const b of this.books.filter(b => !b.removed)) {
-      const normTitle  = norm(b.title)
-      const normAuthor = norm(b.author_canonical || b.author)
+      const normTitle  = normTitleAuthor(b.title)
+      const normAuthor = normTitleAuthor(b.author_canonical || b.author)
       if (!normTitle && !normAuthor) continue
       const key = normTitle + '|' + normAuthor
       if (!groups[key]) groups[key] = []
@@ -559,16 +566,44 @@ class Store {
   getList(id) {
     const l = this.lists.find(l => l.id === id)
     if (!l) return null
-    const books = l.book_ids
-      .map(bid => this._byId.get(bid))
-      .filter(Boolean)
-      .filter(b => !b.removed)
-      .map(b => this._attachState(b))
+
+    // A book_id can go stale when its file gets moved and the scanner marks the
+    // old path removed while creating a fresh entry for the new location. Try to
+    // re-point stale entries at the live book with matching title+author; if no
+    // live match exists, surface a "missing" placeholder instead of silently
+    // dropping it, so the user can see what happened and remove it if they want.
+    const liveByKey = new Map()
+    for (const b of this.books) {
+      if (b.removed) continue
+      const key = normTitleAuthor(b.title) + '|' + normTitleAuthor(b.author_canonical || b.author)
+      if (!liveByKey.has(key)) liveByKey.set(key, b)
+    }
+
+    let listChanged = false
+    const books = []
+    for (const bid of l.book_ids) {
+      const b = this._byId.get(bid)
+      if (!b) continue // book_id doesn't exist at all — nothing to recover
+      if (!b.removed) { books.push(this._attachState(b)); continue }
+
+      const key   = normTitleAuthor(b.title) + '|' + normTitleAuthor(b.author_canonical || b.author)
+      const match = liveByKey.get(key)
+      if (match && !l.book_ids.includes(match.id)) {
+        const idx = l.book_ids.indexOf(bid)
+        l.book_ids[idx] = match.id
+        listChanged = true
+        books.push(this._attachState(match))
+      } else {
+        books.push({ id: bid, title: b.title, author: b.author_canonical || b.author, missing: true })
+      }
+    }
+    if (listChanged) writeJson(this._listsFile, this.lists)
+
     const tabNames = new Map(this.pdfTabs.map(t => [t.id, t.name]))
     const pdf_docs = (l.pdf_doc_ids || [])
       .map(did => this.pdfDocs.find(d => d.id === did))
       .filter(Boolean)
-      .map(d => ({ ...d, missing: !fs.existsSync(d.path), tab_name: tabNames.get(d.tab_id) || '' }))
+      .map(d => ({ ...d, missing: !fs.existsSync(d.path), tab_name: tabNames.get(d.tab_id) || '', cover: this.pdfCoverPath(d.id) }))
     return { ...l, books, pdf_docs }
   }
 
@@ -665,7 +700,7 @@ class Store {
     if (!t) return null
     const docs = this.pdfDocs
       .filter(d => d.tab_id === id)
-      .map(d => ({ ...d, missing: !fs.existsSync(d.path) }))
+      .map(d => ({ ...d, missing: !fs.existsSync(d.path), cover: this.pdfCoverPath(d.id) }))
     return { ...t, docs }
   }
 
@@ -728,6 +763,13 @@ class Store {
     return this.pdfDocs.find(d => d.id === id) || null
   }
 
+  getPdfDocFull(id) {
+    const d = this.getPdfDoc(id)
+    if (!d) return null
+    const tab = this.pdfTabs.find(t => t.id === d.tab_id)
+    return { ...d, missing: !fs.existsSync(d.path), tab_name: tab?.name || '', cover: this.pdfCoverPath(d.id) }
+  }
+
   updatePdfDoc(id, fields) {
     const d = this.pdfDocs.find(d => d.id === id)
     if (!d) return null
@@ -750,7 +792,7 @@ class Store {
 
   getAllPdfDocs() {
     const tabNames = new Map(this.pdfTabs.map(t => [t.id, t.name]))
-    return this.pdfDocs.map(d => ({ ...d, tab_name: tabNames.get(d.tab_id) || '' }))
+    return this.pdfDocs.map(d => ({ ...d, tab_name: tabNames.get(d.tab_id) || '', cover: this.pdfCoverPath(d.id) }))
   }
 }
 

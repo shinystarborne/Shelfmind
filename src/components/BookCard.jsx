@@ -45,6 +45,25 @@ export default function BookCard({ book, selected, onClick, selectable, checked,
   const init = initials(book.title)
   const status = book.read_status || 'unread'
 
+  if (book.missing) {
+    return (
+      <div className="book-card-wrap">
+        <div className="book-card missing" title="This book's file was moved or removed — remove it from the list">
+          <div className="book-cover-placeholder" style={{ display: 'flex' }}>
+            <div className="initials">{init}</div>
+          </div>
+          <div className="book-meta">
+            <div className="book-title">{book.title}</div>
+            <div className="book-author">{displayAuthor(book)}</div>
+            <div className="book-badges">
+              <span className="badge badge-missing">not found</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="book-card-wrap">
       {selectable && (

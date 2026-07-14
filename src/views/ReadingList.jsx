@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { API, useApp } from '../App'
 import BookCard from '../components/BookCard'
 import BookDrawer from '../components/BookDrawer'
+import PdfCard, { pdfCoverSrc } from '../components/PdfCard'
+import PdfDrawer from '../components/PdfDrawer'
 
 const PAGE_SIZE = 20
 
@@ -109,13 +111,18 @@ function PdfPicker({ listDocIds, onAdd, onClose }) {
           autoFocus
         />
         <div style={{ padding: '0 16px 16px', overflowY: 'auto', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {filtered.map(doc => (
-            <button key={doc.id} className="pdf-pick-row" onClick={() => onAdd(doc.id)}>
-              <span style={{ fontSize: 18 }}>📄</span>
-              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'left' }}>{doc.title}</span>
-              {doc.tab_name && <span className="nav-badge">{doc.tab_name}</span>}
-            </button>
-          ))}
+          {filtered.map(doc => {
+            const cover = pdfCoverSrc(doc)
+            return (
+              <button key={doc.id} className="pdf-pick-row" onClick={() => onAdd(doc.id)}>
+                {cover
+                  ? <img src={cover} alt="" style={{ width: 28, height: 36, objectFit: 'cover', borderRadius: 3, flexShrink: 0 }} />
+                  : <span style={{ fontSize: 18 }}>📄</span>}
+                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'left' }}>{doc.title}</span>
+                {doc.tab_name && <span className="nav-badge">{doc.tab_name}</span>}
+              </button>
+            )
+          })}
           {filtered.length === 0 && (
             <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 32, fontSize: 13 }}>
               {allDocs.length === 0
@@ -138,7 +145,8 @@ export default function ReadingList({ listId, onListDeleted, onListUpdated }) {
   const [editDesc,   setEditDesc]   = useState('')
   const [showPicker,    setShowPicker]    = useState(false)
   const [showPdfPicker, setShowPdfPicker] = useState(false)
-  const [selectedId, setSelectedId] = useState(null)
+  const [selectedBookId, setSelectedBookId] = useState(null)
+  const [selectedPdfId,  setSelectedPdfId]  = useState(null)
   const [confirmDel, setConfirmDel] = useState(false)
 
   const loadList = () => {
@@ -199,12 +207,6 @@ export default function ReadingList({ listId, onListDeleted, onListUpdated }) {
     toast('PDF removed from list', 'success')
     loadList()
     onListUpdated?.()
-  }
-
-  const openPdf = async (doc) => {
-    if (!window.electronAPI?.openFile) return
-    const err = await window.electronAPI.openFile(doc.path)
-    if (err) toast(`Could not open file: ${err}`, 'error')
   }
 
   const deleteList = async () => {
@@ -296,8 +298,8 @@ export default function ReadingList({ listId, onListDeleted, onListUpdated }) {
                       <div key={book.id} style={{ position: 'relative' }}>
                         <BookCard
                           book={book}
-                          selected={selectedId === book.id}
-                          onClick={b => setSelectedId(b.id === selectedId ? null : b.id)}
+                          selected={selectedBookId === book.id}
+                          onClick={b => setSelectedBookId(b.id === selectedBookId ? null : b.id)}
                         />
                         <button
                           className="list-remove-btn"
@@ -314,35 +316,19 @@ export default function ReadingList({ listId, onListDeleted, onListUpdated }) {
                   <div className="results-count" style={{ marginTop: list.books.length > 0 ? 24 : 0 }}>
                     {pdfDocs.length} PDF{pdfDocs.length !== 1 ? 's' : ''}
                   </div>
-                  <div className="pdf-doc-list">
+                  <div className="books-grid">
                     {pdfDocs.map(doc => (
-                      <div key={doc.id} className={`pdf-doc-row ${doc.missing ? 'missing' : ''}`}>
-                        <div className="pdf-doc-icon" onDoubleClick={() => openPdf(doc)}>📄</div>
-                        <div className="pdf-doc-main">
-                          <div className="pdf-doc-title" style={{ cursor: 'default' }}>
-                            {doc.title}
-                            {doc.missing && <span className="pdf-doc-missing-badge">file not found</span>}
-                          </div>
-                          <div className="pdf-doc-path">
-                            {doc.tab_name && <span>in 📄 {doc.tab_name}</span>}
-                            {(doc.tags || []).length > 0 && <span> · {doc.tags.join(', ')}</span>}
-                          </div>
-                        </div>
-                        <div className="pdf-doc-actions">
-                          <button
-                            className="btn btn-secondary"
-                            style={{ fontSize: 12, padding: '4px 12px' }}
-                            onClick={() => openPdf(doc)}
-                            disabled={!window.electronAPI || doc.missing}
-                            title={window.electronAPI ? 'Open in your default PDF app' : 'Only available in the desktop app'}
-                          >Open</button>
-                          <button
-                            className="btn btn-ghost"
-                            style={{ color: '#c04040', fontSize: 12 }}
-                            title="Remove from shelf"
-                            onClick={() => removePdf(doc.id)}
-                          >✕</button>
-                        </div>
+                      <div key={doc.id} style={{ position: 'relative' }}>
+                        <PdfCard
+                          doc={doc}
+                          selected={selectedPdfId === doc.id}
+                          onClick={d => setSelectedPdfId(d.id === selectedPdfId ? null : d.id)}
+                        />
+                        <button
+                          className="list-remove-btn"
+                          title="Remove from shelf"
+                          onClick={e => { e.stopPropagation(); removePdf(doc.id) }}
+                        >✕</button>
                       </div>
                     ))}
                   </div>
@@ -369,11 +355,20 @@ export default function ReadingList({ listId, onListDeleted, onListUpdated }) {
         />
       )}
 
-      {selectedId && (
+      {selectedBookId && (
         <BookDrawer
-          bookId={selectedId}
-          onClose={() => setSelectedId(null)}
+          bookId={selectedBookId}
+          onClose={() => setSelectedBookId(null)}
           onStatusChange={() => loadList()}
+        />
+      )}
+
+      {selectedPdfId && (
+        <PdfDrawer
+          docId={selectedPdfId}
+          onClose={() => setSelectedPdfId(null)}
+          onChanged={loadList}
+          onRemoved={() => { setSelectedPdfId(null); loadList(); onListUpdated?.() }}
         />
       )}
     </div>

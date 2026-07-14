@@ -1,172 +1,7 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { API, useApp } from '../App'
-
-// ── Tags editor (custom tags only — chips + input) ────────────────────────────
-function DocTags({ doc, onSave }) {
-  const [custom, setCustom] = useState('')
-
-  const remove = (tag) => onSave(doc.tags.filter(t => t !== tag))
-  const addCustom = () => {
-    const t = custom.trim()
-    setCustom('')
-    if (!t || doc.tags.includes(t)) return
-    onSave([...doc.tags, t])
-  }
-
-  return (
-    <div className="pdf-doc-tags">
-      <div className="tags-wrap">
-        {doc.tags.map(tag => (
-          <span key={tag} className="tag-chip active">
-            {tag}
-            <span
-              className="tag-remove"
-              onClick={e => { e.stopPropagation(); remove(tag) }}
-            >✕</span>
-          </span>
-        ))}
-        <input
-          className="tag-input"
-          style={{ width: 110 }}
-          placeholder="+ tag"
-          value={custom}
-          onChange={e => setCustom(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') addCustom() }}
-          onBlur={addCustom}
-        />
-      </div>
-    </div>
-  )
-}
-
-// ── Single document row ───────────────────────────────────────────────────────
-function DocRow({ doc, onChanged, onRemoved }) {
-  const { toast } = useApp()
-  const [editingTitle, setEditingTitle] = useState(false)
-  const [titleDraft,   setTitleDraft]   = useState(doc.title)
-  const [showNote,     setShowNote]     = useState(!!doc.note)
-  const [noteDraft,    setNoteDraft]    = useState(doc.note || '')
-  const [confirmDel,   setConfirmDel]   = useState(false)
-  const noteSaveTimer = useRef(null)
-
-  const patch = async (fields) => {
-    await fetch(`${API}/pdf-docs/${doc.id}`, {
-      method:  'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify(fields),
-    })
-    onChanged()
-  }
-
-  const saveTitle = () => {
-    setEditingTitle(false)
-    const t = titleDraft.trim()
-    if (t && t !== doc.title) patch({ title: t })
-    else setTitleDraft(doc.title)
-  }
-
-  const saveNote = (text) => {
-    setNoteDraft(text)
-    clearTimeout(noteSaveTimer.current)
-    noteSaveTimer.current = setTimeout(() => patch({ note: text }), 600)
-  }
-
-  const openDoc = async () => {
-    if (!window.electronAPI?.openFile) return
-    const err = await window.electronAPI.openFile(doc.path)
-    if (err) toast(`Could not open file: ${err}`, 'error')
-  }
-
-  const removeDoc = async () => {
-    await fetch(`${API}/pdf-docs/${doc.id}`, { method: 'DELETE' })
-    toast('PDF removed from tab', 'success')
-    onRemoved()
-  }
-
-  const fileName = doc.path.split(/[\\/]/).pop()
-
-  return (
-    <div className={`pdf-doc-row ${doc.missing ? 'missing' : ''}`}>
-      <div className="pdf-doc-icon" onDoubleClick={openDoc}>📄</div>
-
-      <div className="pdf-doc-main">
-        {editingTitle ? (
-          <input
-            className="pdf-doc-title-input"
-            value={titleDraft}
-            onChange={e => setTitleDraft(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'Enter') saveTitle()
-              if (e.key === 'Escape') { setTitleDraft(doc.title); setEditingTitle(false) }
-            }}
-            onBlur={saveTitle}
-            autoFocus
-          />
-        ) : (
-          <div
-            className="pdf-doc-title"
-            title="Click to rename"
-            onClick={() => { setTitleDraft(doc.title); setEditingTitle(true) }}
-          >
-            {doc.title}
-            {doc.missing && <span className="pdf-doc-missing-badge">file not found</span>}
-          </div>
-        )}
-        <div className="pdf-doc-path" title={doc.path}>{fileName}</div>
-
-        <DocTags doc={doc} onSave={tags => patch({ tags })} />
-
-        {showNote && (
-          <textarea
-            className="note-textarea"
-            style={{ marginTop: 8 }}
-            placeholder="Notes about this PDF…"
-            value={noteDraft}
-            onChange={e => saveNote(e.target.value)}
-            rows={3}
-          />
-        )}
-      </div>
-
-      <div className="pdf-doc-actions">
-        <button
-          className="btn btn-secondary"
-          style={{ fontSize: 12, padding: '4px 12px' }}
-          onClick={openDoc}
-          disabled={!window.electronAPI || doc.missing}
-          title={window.electronAPI ? 'Open in your default PDF app' : 'Only available in the desktop app'}
-        >Open</button>
-        <button
-          className="btn btn-ghost"
-          style={{ fontSize: 12 }}
-          title={showNote ? 'Hide note' : 'Add / edit note'}
-          onClick={() => setShowNote(s => !s)}
-        >📝</button>
-        {window.electronAPI?.showItemInFolder && (
-          <button
-            className="btn btn-ghost"
-            style={{ fontSize: 12 }}
-            title="Show in folder"
-            onClick={() => window.electronAPI.showItemInFolder(doc.path)}
-          >📂</button>
-        )}
-        {confirmDel ? (
-          <>
-            <button className="btn btn-ghost" style={{ color: '#c04040', fontSize: 12 }} onClick={removeDoc}>Remove?</button>
-            <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => setConfirmDel(false)}>✕</button>
-          </>
-        ) : (
-          <button
-            className="btn btn-ghost"
-            style={{ color: '#c04040', fontSize: 12 }}
-            title="Remove from tab (file stays on disk)"
-            onClick={() => setConfirmDel(true)}
-          >🗑️</button>
-        )}
-      </div>
-    </div>
-  )
-}
+import PdfCard from '../components/PdfCard'
+import PdfDrawer from '../components/PdfDrawer'
 
 // ── Main view ─────────────────────────────────────────────────────────────────
 export default function PdfTab({ tabId, onTabDeleted, onTabUpdated }) {
@@ -180,6 +15,7 @@ export default function PdfTab({ tabId, onTabDeleted, onTabUpdated }) {
   const [confirmDel, setConfirmDel] = useState(false)
   const [pathDraft,  setPathDraft]  = useState('')
   const [showPathInput, setShowPathInput] = useState(false)
+  const [selectedId, setSelectedId] = useState(null)
 
   const loadTab = () => {
     fetch(`${API}/pdf-tabs/${tabId}`)
@@ -188,7 +24,7 @@ export default function PdfTab({ tabId, onTabDeleted, onTabUpdated }) {
       .catch(() => {})
   }
 
-  useEffect(() => { loadTab(); setSearch(''); setEditing(false); setConfirmDel(false) }, [tabId])
+  useEffect(() => { loadTab(); setSearch(''); setEditing(false); setConfirmDel(false); setSelectedId(null) }, [tabId])
 
   const scanFolder = async () => {
     if (scanning) return
@@ -355,65 +191,77 @@ export default function PdfTab({ tabId, onTabDeleted, onTabUpdated }) {
       </div>
 
       {/* Body */}
-      <div className="pdf-tab-body">
-        {showPathInput && (
-          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-            <input
-              className="search-input"
-              style={{ flex: 1 }}
-              placeholder="Paste the full path to a PDF file…"
-              value={pathDraft}
-              onChange={e => setPathDraft(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') submitPath() }}
-              autoFocus
-            />
-            <button className="btn btn-primary" style={{ fontSize: 12 }} onClick={submitPath}>Add</button>
-          </div>
-        )}
+      <div className="library-body">
+        <div className="books-area">
+          {showPathInput && (
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+              <input
+                className="search-input"
+                style={{ flex: 1 }}
+                placeholder="Paste the full path to a PDF file…"
+                value={pathDraft}
+                onChange={e => setPathDraft(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') submitPath() }}
+                autoFocus
+              />
+              <button className="btn btn-primary" style={{ fontSize: 12 }} onClick={submitPath}>Add</button>
+            </div>
+          )}
 
-        {tab.docs.length === 0 ? (
-          <div className="empty-state">
-            <div className="empty-icon">📄</div>
-            <h3>No PDFs yet</h3>
-            <p>{tab.folder_path
-              ? 'Scan this tab\'s folder or pick individual PDF files.'
-              : 'Click "+ Add PDFs" to pick PDF files from your computer.'}</p>
-            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-              {tab.folder_path && (
-                <button className="btn btn-secondary" onClick={scanFolder} disabled={scanning}>
-                  <span className={scanning ? 'spin' : ''}>↻</span> Scan folder
-                </button>
-              )}
-              <button className="btn btn-secondary" onClick={addPdfs}>+ Add PDFs</button>
-            </div>
-          </div>
-        ) : (
-          <>
-            <input
-              className="search-input"
-              style={{ marginBottom: 14, maxWidth: 420 }}
-              placeholder="Search title, tags, notes…"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-            />
-            {filteredDocs.length === 0 && (
-              <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 32, fontSize: 13 }}>
-                No PDFs match your search
+          {tab.docs.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-icon">📄</div>
+              <h3>No PDFs yet</h3>
+              <p>{tab.folder_path
+                ? 'Scan this tab\'s folder or pick individual PDF files.'
+                : 'Click "+ Add PDFs" to pick PDF files from your computer.'}</p>
+              <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                {tab.folder_path && (
+                  <button className="btn btn-secondary" onClick={scanFolder} disabled={scanning}>
+                    <span className={scanning ? 'spin' : ''}>↻</span> Scan folder
+                  </button>
+                )}
+                <button className="btn btn-secondary" onClick={addPdfs}>+ Add PDFs</button>
               </div>
-            )}
-            <div className="pdf-doc-list">
-              {filteredDocs.map(doc => (
-                <DocRow
-                  key={doc.id}
-                  doc={doc}
-                  onChanged={loadTab}
-                  onRemoved={() => { loadTab(); onTabUpdated?.() }}
-                />
-              ))}
             </div>
-          </>
-        )}
+          ) : (
+            <>
+              <input
+                className="search-input"
+                style={{ marginBottom: 14, maxWidth: 420 }}
+                placeholder="Search title, tags, notes…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+              />
+              {filteredDocs.length === 0 && (
+                <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 32, fontSize: 13 }}>
+                  No PDFs match your search
+                </div>
+              )}
+              <div className="results-count">{filteredDocs.length} PDF{filteredDocs.length !== 1 ? 's' : ''}</div>
+              <div className="books-grid">
+                {filteredDocs.map(doc => (
+                  <PdfCard
+                    key={doc.id}
+                    doc={doc}
+                    selected={selectedId === doc.id}
+                    onClick={d => setSelectedId(d.id === selectedId ? null : d.id)}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+        </div>
       </div>
+
+      {selectedId && (
+        <PdfDrawer
+          docId={selectedId}
+          onClose={() => setSelectedId(null)}
+          onChanged={loadTab}
+          onRemoved={() => { setSelectedId(null); loadTab(); onTabUpdated?.() }}
+        />
+      )}
     </div>
   )
 }
