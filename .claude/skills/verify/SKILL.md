@@ -46,3 +46,20 @@ The Express server runs standalone:
 SHELFMIND_DATA=<scratch> node -e "require('./server/index').startServer(3888).then(async port => { /* fetch(...) */ })"
 ```
 Good for API surface tests without opening a window the user might start using.
+
+## Never test against the user's live data dir while their app might be running
+If `netstat -ano | grep :3001` shows a listener, check `wmic process where "ProcessId=<pid>" get ExecutablePath`
+— if it's `C:\Program Files\ShelfMind\ShelfMind.exe` (or similar), that's the user's own running app.
+Don't kill it and don't point a second dev instance at the same `SHELFMIND_DATA` — two processes
+writing the same JSON files concurrently can corrupt them. Instead `cp -r` the real data dir to
+scratch and verify against the copy. If the real app isn't running, it's fine to reuse its dir directly,
+but still prefer a scratch copy so a bad build can't leave real user data half-written.
+
+## pdfjs-dist version pinned to 4.x — do not casually bump to 5/6
+Electron 28.3.3 (this app's version) bundles an older Chromium than pdfjs-dist 5.x/6.x assume.
+Symptoms seen with 6.1.200: `TypeError: Promise.try is not a function` and, once patched,
+`TypeError: URL.parse is not a function` — both very recent JS statics pdfjs-dist's internals call
+unconditionally. There's no classic (non-ESM) worker build in 6.x to fall back to either.
+Fix was downgrading to `pdfjs-dist@^4.10.38`, which works cleanly with this Electron version — no
+polyfills needed. If Electron itself is ever upgraded to a recent version, this pin can likely be
+lifted, but verify thumbnail generation again before doing so.

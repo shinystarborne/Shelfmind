@@ -566,6 +566,12 @@ function startServer(port = 3001) {
 
     app.get('/api/pdf-docs', (_, res) => res.json(store.getAllPdfDocs()))
 
+    app.get('/api/pdf-docs/:id', (req, res) => {
+      const doc = store.getPdfDocFull(req.params.id)
+      if (!doc) return res.status(404).json({ error: 'Not found' })
+      res.json(doc)
+    })
+
     app.put('/api/pdf-docs/:id', (req, res) => {
       const doc = store.updatePdfDoc(req.params.id, req.body)
       if (!doc) return res.status(404).json({ error: 'Not found' })
@@ -575,6 +581,25 @@ function startServer(port = 3001) {
     app.delete('/api/pdf-docs/:id', (req, res) => {
       if (!store.deletePdfDoc(req.params.id)) return res.status(404).json({ error: 'Not found' })
       res.json({ ok: true })
+    })
+
+    // Raw PDF bytes — used client-side by pdf.js to render a cover thumbnail
+    app.get('/api/pdf-docs/:id/file', (req, res) => {
+      const doc = store.getPdfDoc(req.params.id)
+      if (!doc) return res.status(404).json({ error: 'Not found' })
+      if (!fs.existsSync(doc.path)) return res.status(404).json({ error: 'File not found on disk' })
+      res.sendFile(doc.path)
+    })
+
+    app.post('/api/pdf-docs/:id/cover', (req, res) => {
+      const { dataUrl } = req.body
+      if (!dataUrl || !dataUrl.startsWith('data:image/')) {
+        return res.status(400).json({ error: 'dataUrl must be a base64 image data URL' })
+      }
+      const doc = store.getPdfDoc(req.params.id)
+      if (!doc) return res.status(404).json({ error: 'Not found' })
+      store.savePdfCover(req.params.id, dataUrl)
+      res.json({ ok: true, cover: store.pdfCoverPath(req.params.id) })
     })
 
     // ── QR Code ────────────────────────────────────────────────────────────────
