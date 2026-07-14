@@ -1356,11 +1356,6 @@ h3 { font-size: 18px; }
   color: #a06010;
   background: #fff8ee;
 }
-.filter-chip.dup-chip.active {
-  background: #e8a030;
-  border-color: #e8a030;
-  color: #fff;
-}
 [data-theme="dark"] .filter-chip.dup-chip {
   background: #2a1e10;
   border-color: #a07030;
@@ -1642,3 +1637,88 @@ h3 { font-size: 18px; }
   font-family: inherit;
 }
 .pdf-pick-row:hover { border-color: var(--rose-deep); }
+
+/* ── Duplicates modal ─────────────────────────────────────────────────────── */
+.dup-group {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+.dup-group:first-child { padding-top: 0; }
+.dup-group:last-child { border-bottom: none; }
+
+.dup-group-title {
+  font-family: var(--font-serif);
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--text);
+}
+.dup-group-author {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+.dup-group-books {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dup-book-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  background: var(--white);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+}
+.dup-book-row.suggested-keep {
+  border-color: var(--sage-dark);
+  background: rgba(122, 145, 104, 0.08);
+}
+
+.dup-keep-badge {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--sage-dark);
+  white-space: nowrap;
+  text-transform: none;
+}
+
+.dup-book-cover, .dup-book-cover-ph {
+  width: 32px;
+  height: 44px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  object-fit: cover;
+}
+.dup-book-cover-ph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--cream-dark);
+  color: var(--brown-light);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.dup-book-info {
+  flex: 1;
+  min-width: 0;
+}
+.dup-book-path {
+  font-size: 12px;
+  color: var(--text-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dup-book-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  text-transform: capitalize;
+}

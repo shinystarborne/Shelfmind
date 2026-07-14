@@ -1,6 +1,76 @@
 import { useState, useEffect } from 'react'
 import { API, useApp } from '../App'
 import LibraryImportModal from '../components/LibraryImportModal'
+import { formatFileSize } from '../components/BookCard'
+
+// ── _Removed folder cleanup ───────────────────────────────────────────────────
+function RemovedFolderSection() {
+  const { toast } = useApp()
+  const [stats, setStats]     = useState(null)
+  const [confirming, setConfirming] = useState(false)
+  const [emptying, setEmptying]     = useState(false)
+
+  const load = () => fetch(`${API}/removed-folder`).then(r => r.json()).then(setStats).catch(() => setStats(null))
+  useEffect(() => { load() }, [])
+
+  const empty = async () => {
+    setEmptying(true)
+    try {
+      const res = await fetch(`${API}/removed-folder/empty`, { method: 'POST' }).then(r => r.json())
+      if (res.deleted) {
+        toast(`Permanently deleted ${res.deleted} file${res.deleted !== 1 ? 's' : ''} (${formatFileSize(res.freedBytes)} freed)`, 'success')
+      } else {
+        toast('Nothing to delete')
+      }
+      for (const err of res.errors || []) toast(err, 'error')
+      load()
+    } catch {
+      toast('Could not empty the _Removed folder', 'error')
+    } finally {
+      setEmptying(false)
+      setConfirming(false)
+    }
+  }
+
+  return (
+    <div className="prefs-section">
+      <h3>🗑️ Removed Files</h3>
+      <p style={{ fontSize: 13, color: 'var(--text-soft)', marginBottom: 16, lineHeight: 1.6 }}>
+        Books and duplicate copies you've removed are moved to a <code style={{ fontSize: 12 }}>_Removed</code> folder
+        inside your library — nothing is deleted until you empty it here.
+      </p>
+      {stats && (
+        <p style={{ fontSize: 13, color: 'var(--text-soft)', marginBottom: 16 }}>
+          {stats.fileCount === 0
+            ? '_Removed is empty.'
+            : <>{stats.fileCount} file{stats.fileCount !== 1 ? 's' : ''} · {formatFileSize(stats.totalSize)}</>}
+        </p>
+      )}
+      {confirming ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'flex-start' }}>
+          <div style={{ fontSize: 13, color: '#c04040', fontWeight: 700 }}>
+            Permanently delete {stats?.fileCount} file{stats?.fileCount !== 1 ? 's' : ''}? This cannot be undone.
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn-secondary" style={{ color: '#c04040' }} onClick={empty} disabled={emptying}>
+              {emptying ? <span className="spin">↻</span> : '🗑️'} Yes, delete permanently
+            </button>
+            <button className="btn btn-ghost" onClick={() => setConfirming(false)} disabled={emptying}>Cancel</button>
+          </div>
+        </div>
+      ) : (
+        <button
+          className="btn btn-secondary"
+          style={{ color: '#c04040' }}
+          onClick={() => setConfirming(true)}
+          disabled={!stats || stats.fileCount === 0}
+        >
+          🗑️ Empty _Removed Folder
+        </button>
+      )}
+    </div>
+  )
+}
 
 // ── Export section ────────────────────────────────────────────────────────────
 function ExportSection() {
@@ -408,6 +478,9 @@ export default function Preferences({ onSave }) {
 
         {/* PDF Tabs */}
         <PdfTabsSection />
+
+        {/* Removed files cleanup */}
+        <RemovedFolderSection />
 
         {/* Export */}
         <ExportSection />

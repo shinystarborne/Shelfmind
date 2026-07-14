@@ -11,6 +11,25 @@ const { writeEpubMeta } = require('./epubWriter')
 let scanState   = { running: false, current: 0, total: 0, added: 0, done: false, error: null }
 let enrichState = { running: false, current: 0, total: 0, success: 0, done: false }
 
+function getRemovedDir(store) {
+  const libraryPath = store.getPref('library_path') || 'E:\\Books'
+  return path.join(libraryPath, '_Removed')
+}
+
+// Moves a book's file into <library>\_Removed\ — never a hard delete.
+function moveBookToRemoved(book, libraryPath) {
+  const removedDir = path.join(libraryPath, '_Removed')
+  fs.mkdirSync(removedDir, { recursive: true })
+  let dest = path.join(removedDir, path.basename(book.path))
+  if (fs.existsSync(dest)) {
+    const ext  = path.extname(dest)
+    const base = path.basename(dest, ext)
+    dest = path.join(removedDir, `${base}_${Date.now()}${ext}`)
+  }
+  fs.renameSync(book.path, dest)
+  return dest
+}
+
 function startServer(port = 3001) {
   return new Promise(resolve => {
     const app   = express()
@@ -106,17 +125,8 @@ function startServer(port = 3001) {
       if (!book) return res.status(404).json({ error: 'Not found' })
 
       const libraryPath = store.getPref('library_path') || 'E:\\Books'
-      const removedDir  = path.join(libraryPath, '_Removed')
       try {
-        fs.mkdirSync(removedDir, { recursive: true })
-        // Avoid overwriting if a file with the same name already exists there
-        let dest = path.join(removedDir, path.basename(book.path))
-        if (fs.existsSync(dest)) {
-          const ext  = path.extname(dest)
-          const base = path.basename(dest, ext)
-          dest = path.join(removedDir, `${base}_${Date.now()}${ext}`)
-        }
-        fs.renameSync(book.path, dest)
+        const dest = moveBookToRemoved(book, libraryPath)
         store.removeBook(req.params.id)
         res.json({ ok: true, movedTo: dest })
       } catch (err) {
@@ -278,6 +288,66 @@ function startServer(port = 3001) {
     // ── Duplicates ─────────────────────────────────────────────────────────────
 
     app.get('/api/duplicates', (_, res) => res.json(store.getDuplicates()))
+
+    // Keeps the suggested copy per group (best-formatted filename), moves the
+    // rest to _Removed. Never touches groups down to a single copy already.
+    app.post('/api/duplicates/remove-all', (_, res) => {
+      const groups     = store.getDuplicates()
+      const libraryPath = store.getPref('library_path') || 'E:\\Books'
+      const movedIds   = []
+      const errors     = []
+
+      for (const g of groups) {
+        const keep = g.books.find(b => b.suggested_keep) || g.books[0]
+        for (const b of g.books) {
+          if (b.id === keep.id) continue
+          try {
+            moveBookToRemoved(b, libraryPath)
+            movedIds.push(b.id)
+          } catch (err) {
+            errors.push(`${b.title}: ${err.message}`)
+          }
+        }
+      }
+      if (movedIds.length) store.bulkRemove(movedIds)
+      res.json({ ok: true, removed: movedIds.length, groups: groups.length, errors })
+    })
+
+    // ── _Removed folder ────────────────────────────────────────────────────────
+
+    app.get('/api/removed-folder', (_, res) => {
+      const dir = getRemovedDir(store)
+      if (!fs.existsSync(dir)) return res.json({ path: dir, fileCount: 0, totalSize: 0 })
+      let fileCount = 0, totalSize = 0
+      for (const name of fs.readdirSync(dir)) {
+        const stat = fs.statSync(path.join(dir, name))
+        if (stat.isFile()) { fileCount++; totalSize += stat.size }
+      }
+      res.json({ path: dir, fileCount, totalSize })
+    })
+
+    // Permanently deletes every file directly inside _Removed. Unlike every
+    // other "remove" action in the app, this is a real, unrecoverable delete —
+    // only touches files (not subfolders), so it can't wipe something unrelated.
+    app.post('/api/removed-folder/empty', (_, res) => {
+      const dir = getRemovedDir(store)
+      if (!fs.existsSync(dir)) return res.json({ ok: true, deleted: 0, freedBytes: 0, errors: [] })
+      let deleted = 0, freedBytes = 0
+      const errors = []
+      for (const name of fs.readdirSync(dir)) {
+        const full = path.join(dir, name)
+        try {
+          const stat = fs.statSync(full)
+          if (!stat.isFile()) continue
+          freedBytes += stat.size
+          fs.unlinkSync(full)
+          deleted++
+        } catch (err) {
+          errors.push(`${name}: ${err.message}`)
+        }
+      }
+      res.json({ ok: true, deleted, freedBytes, errors })
+    })
 
     // ── Recommendations ────────────────────────────────────────────────────────
 
