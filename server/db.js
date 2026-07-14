@@ -32,6 +32,52 @@ function normTitleAuthor(s) {
   return (s || '').toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, ' ').trim()
 }
 
+// Heuristic filename-quality score, used to auto-pick which copy of a duplicate
+// to keep. Rewards the clean "Title by Author.ext" naming ShelfMind's own
+// scanner falls back to; penalizes the underscore/dash/bracket/id-stuffed
+// filenames typical of scene-release and archive-site exports.
+const DUPLICATE_JUNK_MARKERS = [
+  'z-lib', 'zlib', '1lib', 'libgen', "anna's archive", 'annas-archive',
+  'oceanofpdf', 'bookfi', 'esokrat', 'flibusta', 'rulit', 'freeditorial',
+]
+function fileNameQualityScore(filePath) {
+  const base = path.basename(filePath, path.extname(filePath))
+  let score = 0
+
+  if (/^.+ by .+$/i.test(base)) score += 30
+  else if (/^.+ - .+$/.test(base) && !base.includes('--')) score += 15
+
+  score -= (base.match(/_/g) || []).length * 3
+  score -= (base.match(/--/g) || []).length * 10
+  score -= (base.match(/[[\]]/g) || []).length * 5
+  score -= (base.match(/\d{5,}/g) || []).length * 8
+  if (/\.\w{2,5}$/.test(base)) score -= 15 // double extension, e.g. "....fb2.epub"
+  if (/\(\s*copy(\s*\d+)?\s*\)|\scopy\s*\d*$/i.test(base)) score -= 20
+
+  const lower = base.toLowerCase()
+  for (const marker of DUPLICATE_JUNK_MARKERS) if (lower.includes(marker)) score -= 20
+
+  const letters = base.replace(/[^a-zA-Zа-яА-Я]/g, '')
+  const upper   = base.replace(/[^A-ZА-Я]/g, '')
+  if (letters.length > 10 && upper.length / letters.length > 0.7) score -= 10 // ALL CAPS
+
+  if (base.length > 80) score -= (base.length - 80) * 0.2
+
+  return score
+}
+function pickBestCopy(books) {
+  let best = books[0]
+  let bestScore = fileNameQualityScore(best.path)
+  for (const b of books.slice(1)) {
+    const s = fileNameQualityScore(b.path)
+    if (s > bestScore || (s === bestScore && (b.file_size || 0) > (best.file_size || 0))) {
+      best = b
+      bestScore = s
+    }
+  }
+  return best
+}
+
 function readJson(file, fallback) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')) }
   catch { return fallback }
@@ -303,7 +349,10 @@ class Store {
     }
     return Object.entries(groups)
       .filter(([, books]) => books.length > 1)
-      .map(([key, books]) => ({ key, books }))
+      .map(([key, books]) => {
+        const keep = pickBestCopy(books)
+        return { key, books: books.map(b => ({ ...b, suggested_keep: b.id === keep.id })) }
+      })
   }
 
   // ── Recommendations ───────────────────────────────────────────────────────────

@@ -3,6 +3,7 @@ import Fuse from 'fuse.js'
 import { API, useApp } from '../App'
 import BookCard, { BookListItem } from '../components/BookCard'
 import BookDrawer from '../components/BookDrawer'
+import DuplicatesModal from '../components/DuplicatesModal'
 import { coverSrc, initials, displayAuthor } from '../components/BookCard'
 
 const SORT_OPTIONS = [
@@ -340,7 +341,7 @@ export default function Library() {
   const [selectMode, setSelectMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState([])
   const [duplicates, setDuplicates] = useState([])
-  const [showDupsOnly, setShowDupsOnly] = useState(false)
+  const [showDupsModal, setShowDupsModal] = useState(false)
   const searchRef = useRef(null)
   const enrichPollRef = useRef(null)
 
@@ -401,13 +402,6 @@ export default function Library() {
     ignoreLocation: true,
   }), [books])
 
-  // Duplicate ids set for quick lookup
-  const dupIds = useMemo(() => {
-    const ids = new Set()
-    for (const g of duplicates) for (const b of g.books) ids.add(b.id)
-    return ids
-  }, [duplicates])
-
   const filtered = useMemo(() => {
     let result = search.length > 1
       ? fuse.search(search).map(r => r.item)
@@ -415,9 +409,6 @@ export default function Library() {
 
     // Tag filter (client-side)
     if (tagFilter) result = result.filter(b => (b.tags || []).includes(tagFilter))
-
-    // Duplicates-only filter
-    if (showDupsOnly) result = result.filter(b => dupIds.has(b.id))
 
     result.sort((a, b) => {
       if (sort === 'title')  return a.title.localeCompare(b.title)
@@ -430,7 +421,7 @@ export default function Library() {
       return 0
     })
     return result
-  }, [books, search, sort, fuse, tagFilter, showDupsOnly, dupIds])
+  }, [books, search, sort, fuse, tagFilter])
 
   const groupedByAuthor = useMemo(() => {
     if (view !== 'by-author') return null
@@ -489,11 +480,10 @@ export default function Library() {
     setAuthorFilter('')
     setSeriesFilter('')
     setTagFilter('')
-    setShowDupsOnly(false)
     setSearch('')
   }
 
-  const hasFilters = Object.values(filters).some(Boolean) || authorFilter || seriesFilter || tagFilter || showDupsOnly
+  const hasFilters = Object.values(filters).some(Boolean) || authorFilter || seriesFilter || tagFilter
 
   const handleStatusChange = (id, status) =>
     setBooks(bs => bs.map(b => b.id === id ? { ...b, read_status: status } : b))
@@ -688,8 +678,9 @@ export default function Library() {
 
         {duplicates.length > 0 && (
           <button
-            className={`filter-chip dup-chip ${showDupsOnly ? 'active' : ''}`}
-            onClick={() => setShowDupsOnly(d => !d)}
+            className="filter-chip dup-chip"
+            onClick={() => setShowDupsModal(true)}
+            title="Review and remove duplicate copies"
           >
             ⚠️ {duplicates.length} duplicate{duplicates.length !== 1 ? 's' : ''}
           </button>
@@ -790,6 +781,15 @@ export default function Library() {
           bookId={selectedId}
           onClose={() => setSelectedId(null)}
           onStatusChange={handleStatusChange}
+        />
+      )}
+
+      {showDupsModal && (
+        <DuplicatesModal
+          onClose={() => {
+            setShowDupsModal(false)
+            fetch(`${API}/duplicates`).then(r => r.json()).then(setDuplicates).catch(() => {})
+          }}
         />
       )}
     </div>
