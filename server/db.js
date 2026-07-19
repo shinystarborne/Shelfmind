@@ -889,6 +889,9 @@ class Store {
     if (fields.note   !== undefined) d.note  = fields.note
     if (fields.tags   !== undefined) d.tags  = Array.isArray(fields.tags) ? fields.tags : []
     if (fields.tab_id !== undefined && this.pdfTabs.some(t => t.id === fields.tab_id)) d.tab_id = fields.tab_id
+    // In-app PDF viewer position
+    if (typeof fields.last_page === 'number') d.last_page = Math.max(1, Math.round(fields.last_page))
+    if (typeof fields.zoom      === 'number') d.zoom      = fields.zoom
     writeJson(this._pdfDocsFile, this.pdfDocs)
     return d
   }

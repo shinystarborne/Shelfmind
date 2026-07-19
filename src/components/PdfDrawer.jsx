@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { API, useApp } from '../App'
 import { pdfCoverSrc } from './PdfCard'
 import { initials } from './BookCard'
@@ -36,7 +36,7 @@ function DocTags({ tags, onSave }) {
 }
 
 export default function PdfDrawer({ docId, onClose, onChanged, onRemoved }) {
-  const { toast } = useApp()
+  const { toast, openPdfReader, pdfReaderDoc } = useApp()
   const [doc,          setDoc]          = useState(null)
   const [note,         setNote]         = useState('')
   const [noteDirty,    setNoteDirty]    = useState(false)
@@ -46,6 +46,13 @@ export default function PdfDrawer({ docId, onClose, onChanged, onRemoved }) {
 
   const load = () => fetch(`${API}/pdf-docs/${docId}`).then(r => r.json()).then(d => { setDoc(d); setNote(d.note || '') })
   useEffect(() => { load(); setEditingTitle(false); setConfirmDel(false) }, [docId])
+
+  // When the in-app PDF viewer closes, re-fetch so Continue page is fresh
+  const prevPdfReader = useRef(pdfReaderDoc)
+  useEffect(() => {
+    if (prevPdfReader.current && !pdfReaderDoc) load()
+    prevPdfReader.current = pdfReaderDoc
+  }, [pdfReaderDoc])
 
   useEffect(() => {
     if (!noteDirty) return
@@ -170,6 +177,14 @@ export default function PdfDrawer({ docId, onClose, onChanged, onRemoved }) {
           <div className="drawer-section">
             <div className="drawer-section-label">Actions</div>
             <div className="drawer-actions">
+              <button
+                className="btn btn-primary"
+                onClick={() => openPdfReader(doc)}
+                disabled={doc.missing}
+                title="Read in ShelfMind"
+              >
+                📖 {doc.last_page > 1 ? `Continue · p.${doc.last_page}` : 'Read'}
+              </button>
               {window.electronAPI && (
                 <button
                   className="btn btn-primary"
@@ -178,7 +193,7 @@ export default function PdfDrawer({ docId, onClose, onChanged, onRemoved }) {
                   disabled={doc.missing}
                   title="Open in your default PDF app"
                 >
-                  📖 Open
+                  📂 Open
                 </button>
               )}
               {window.electronAPI?.showItemInFolder && (
