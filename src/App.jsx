@@ -5,6 +5,7 @@ import Preferences from './views/Preferences'
 import ReadingList from './views/ReadingList'
 import PdfTab from './views/PdfTab'
 import Reader from './components/Reader'
+import Quotes from './views/Quotes'
 
 // When loaded in Electron (file://) hostname is empty — fall back to localhost.
 // When opened in a browser via QR code the hostname is the LAN IP, so API calls go to the right machine.
@@ -67,6 +68,7 @@ function ScanButton({ onScanDone }) {
 // ── Nav items ─────────────────────────────────────────────────────────────────
 const NAV = [
   { id: 'library',  icon: '📚', label: 'Library' },
+  { id: 'quotes',   icon: '❝',  label: 'Quotes' },
   { id: 'insights', icon: '✨', label: 'Insights' },
 ]
 
@@ -83,9 +85,9 @@ export default function App() {
   const [activeListId, setActiveListId] = useState(null)
   const [pdfTabs, setPdfTabs] = useState([])
   const [activePdfTabId, setActivePdfTabId] = useState(null)
-  const [readerBook, setReaderBook] = useState(null)   // book object → reader open
+  const [readerBook, setReaderBook] = useState(null)   // { book, target } → reader open
 
-  const openReader  = useCallback(book => setReaderBook(book), [])
+  const openReader  = useCallback((book, target = null) => setReaderBook({ book, target }), [])
   const closeReader = useCallback(() => setReaderBook(null), [])
 
   const loadLists = useCallback(() => {
@@ -266,6 +268,7 @@ export default function App() {
         {/* Main */}
         <main className="main-content">
           {view === 'library'     && <Library />}
+          {view === 'quotes'      && <Quotes />}
           {view === 'insights'    && <Insights />}
           {view === 'preferences' && <Preferences onSave={refreshPrefs} />}
           {view === 'list' && activeListId && (
@@ -303,7 +306,7 @@ export default function App() {
         </nav>
       </div>
 
-      {readerBook && <Reader book={readerBook} onClose={closeReader} />}
+      {readerBook && <Reader book={readerBook.book} target={readerBook.target} onClose={closeReader} />}
 
       <Toasts toasts={toasts} onDismiss={dismissToast} />
     </AppCtx.Provider>

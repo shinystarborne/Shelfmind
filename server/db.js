@@ -11,6 +11,7 @@
 const fs   = require('fs')
 const path = require('path')
 const os   = require('os')
+const crypto = require('crypto')
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 // ISO 639-2 (three-letter, common in epub metadata) → ISO 639-1
@@ -100,6 +101,7 @@ class Store {
     this._listsFile   = path.join(dataDir, 'lists.json')
     this._pdfTabsFile = path.join(dataDir, 'pdfTabs.json')
     this._pdfDocsFile = path.join(dataDir, 'pdfDocs.json')
+    this._highlightsFile = path.join(dataDir, 'highlights.json')
 
     this.books   = readJson(this._booksFile,   [])
     this.states  = readJson(this._statesFile,  {})
@@ -107,6 +109,7 @@ class Store {
     this.lists   = readJson(this._listsFile,   [])
     this.pdfTabs = readJson(this._pdfTabsFile, [])
     this.pdfDocs = readJson(this._pdfDocsFile, [])
+    this.highlights = readJson(this._highlightsFile, {})   // bookId → [highlight]
 
     // Seed default prefs
     const defaults = {
@@ -282,6 +285,58 @@ class Store {
     if (!this.states[bookId]) this.states[bookId] = {}
     this.states[bookId].tags = Array.isArray(tags) ? tags : []
     writeJson(this._statesFile, this.states)
+  }
+
+  // ── Highlights ──────────────────────────────────────────────────────────────
+  // { id, spine, start, end, text, color, created_at } — start/end are character
+  // offsets into the chapter's textContent; text is kept for re-anchoring + quotes.
+  getHighlights(bookId) {
+    return this.highlights[bookId] || []
+  }
+
+  addHighlight(bookId, { spine, start, end, text, color }) {
+    const h = {
+      id: crypto.randomUUID(),
+      spine, start, end,
+      text:  String(text || '').trim(),
+      color: color || 'yellow',
+      created_at: Math.floor(Date.now() / 1000),
+    }
+    if (!this.highlights[bookId]) this.highlights[bookId] = []
+    this.highlights[bookId].push(h)
+    writeJson(this._highlightsFile, this.highlights)
+    return h
+  }
+
+  deleteHighlight(bookId, hid) {
+    const arr = this.highlights[bookId]
+    if (!arr) return false
+    const idx = arr.findIndex(h => h.id === hid)
+    if (idx < 0) return false
+    arr.splice(idx, 1)
+    if (arr.length === 0) delete this.highlights[bookId]
+    writeJson(this._highlightsFile, this.highlights)
+    return true
+  }
+
+  // All highlights joined with book info, newest first — feeds the Quotes view
+  getAllHighlights() {
+    const out = []
+    for (const [bookId, arr] of Object.entries(this.highlights)) {
+      const b = this._byId.get(bookId)
+      if (!b || b.removed) continue
+      for (const h of arr) {
+        out.push({
+          ...h,
+          book_id:    bookId,
+          book_title: b.title,
+          book_author: b.author_canonical || b.author || '',
+          cover_local: b.cover_local || this.coverPath(bookId),
+        })
+      }
+    }
+    out.sort((a, b) => b.created_at - a.created_at)
+    return out
   }
 
   // Where the in-app reader left off: { spine, frac, percent, updated_at }
