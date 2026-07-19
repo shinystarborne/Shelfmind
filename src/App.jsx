@@ -5,6 +5,7 @@ import Preferences from './views/Preferences'
 import ReadingList from './views/ReadingList'
 import PdfTab from './views/PdfTab'
 import Reader from './components/Reader'
+import PdfReader from './components/PdfReader'
 import Quotes from './views/Quotes'
 
 // When loaded in Electron (file://) hostname is empty — fall back to localhost.
@@ -89,6 +90,9 @@ export default function App() {
 
   const openReader  = useCallback((book, target = null) => setReaderBook({ book, target }), [])
   const closeReader = useCallback(() => setReaderBook(null), [])
+  const [pdfReaderDoc, setPdfReaderDoc] = useState(null)
+  const openPdfReader  = useCallback(doc => setPdfReaderDoc(doc), [])
+  const closePdfReader = useCallback(() => setPdfReaderDoc(null), [])
 
   const loadLists = useCallback(() => {
     fetch(`${API}/lists`).then(r => r.json()).then(setLists).catch(() => {})
@@ -160,7 +164,7 @@ export default function App() {
   const refreshPrefs = () => fetch(`${API}/preferences`).then(r => r.json()).then(setPrefs)
 
   return (
-    <AppCtx.Provider value={{ toast, prefs, refreshPrefs, toggleTheme, refreshLibrary, setRefreshLibrary, pdfTabs, loadPdfTabs, openReader, readerBook }}>
+    <AppCtx.Provider value={{ toast, prefs, refreshPrefs, toggleTheme, refreshLibrary, setRefreshLibrary, pdfTabs, loadPdfTabs, openReader, readerBook, openPdfReader, pdfReaderDoc }}>
       <div className={`app-shell${sidebarOpen ? '' : ' sidebar-collapsed'}`}>
         {/* Sidebar */}
         <aside className="sidebar">
@@ -307,6 +311,7 @@ export default function App() {
       </div>
 
       {readerBook && <Reader book={readerBook.book} target={readerBook.target} onClose={closeReader} />}
+      {pdfReaderDoc && <PdfReader doc={pdfReaderDoc} onClose={closePdfReader} />}
 
       <Toasts toasts={toasts} onDismiss={dismissToast} />
     </AppCtx.Provider>
