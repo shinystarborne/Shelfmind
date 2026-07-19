@@ -327,4 +327,4 @@ function parseFb2Meta(filePath) {
   }
 }
 
-module.exports = { getStructure, getResource, parseFb2Meta }
+module.exports = { getStructure, getResource, parseFb2Meta, openFb2 }

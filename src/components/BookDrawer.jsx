@@ -295,6 +295,75 @@ function RenameConfirm({ book, onConfirm, onCancel }) {
   )
 }
 
+// ── Convert format ────────────────────────────────────────────────────────────
+// .zip is assumed to be fb2-in-zip (the common case); the server verifies.
+const CONVERT_TARGETS = {
+  epub: ['fb2'],
+  fb2:  ['epub'],
+  zip:  ['epub'],
+  doc:  ['epub', 'fb2'],
+  docx: ['epub', 'fb2'],
+}
+
+function ConvertPanel({ book, onDone, onCancel }) {
+  const [busy, setBusy] = useState(null)   // target currently converting
+  const { toast } = useApp()
+  const targets = CONVERT_TARGETS[book.format] || []
+
+  const convert = async (target) => {
+    setBusy(target)
+    try {
+      const res = await fetch(`${API}/books/${book.id}/convert`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ target }),
+      }).then(r => r.json())
+      if (res.ok) {
+        toast(`Saved as ${res.newName}`, 'success')
+        onDone()
+      } else {
+        toast(`Error: ${res.error}`, 'error')
+        setBusy(null)
+      }
+    } catch {
+      toast('Conversion failed')
+      setBusy(null)
+    }
+  }
+
+  return (
+    <div style={{
+      background: 'var(--cream-dark)',
+      border: '1.5px solid var(--border)',
+      borderRadius: 'var(--radius-md)',
+      padding: '14px 16px',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 10,
+    }}>
+      <div style={{ fontSize: 13, fontWeight: 700 }}>Convert to another format</div>
+      <div style={{ fontSize: 12, color: 'var(--text-soft)', lineHeight: 1.5 }}>
+        Creates a new file next to the original and adds it to your library.
+        The original file stays untouched.
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        {targets.map(t => (
+          <button
+            key={t}
+            className="btn btn-primary"
+            style={{ flex: 1 }}
+            disabled={!!busy}
+            onClick={() => convert(t)}
+          >
+            {busy === t ? <span className="spin">↻</span> : '🔄'} To {t.toUpperCase()}
+          </button>
+        ))}
+        <button className="btn btn-ghost" onClick={onCancel} disabled={!!busy}>Cancel</button>
+      </div>
+    </div>
+  )
+}
+
 // ── Remove confirmation ───────────────────────────────────────────────────────
 function RemoveConfirm({ book, onConfirm, onCancel }) {
   const [busy, setBusy] = useState(false)
@@ -453,6 +522,7 @@ export default function BookDrawer({ bookId, onClose, onStatusChange, onRemoved 
   const [showEdit,    setShowEdit]    = useState(false)
   const [showRemove,  setShowRemove]  = useState(false)
   const [showRename,  setShowRename]  = useState(false)
+  const [showConvert, setShowConvert] = useState(false)
   const [enriching,   setEnriching]   = useState(false)
   const [uploading,    setUploading]    = useState(false)
   const [epubImages,   setEpubImages]   = useState(null)   // null=hidden, []=loading, [{...}]=loaded
@@ -467,7 +537,7 @@ export default function BookDrawer({ bookId, onClose, onStatusChange, onRemoved 
       })
   }, [bookId])
 
-  useEffect(() => { load(); setShowEdit(false); setShowRemove(false); setShowRename(false) }, [load])
+  useEffect(() => { load(); setShowEdit(false); setShowRemove(false); setShowRename(false); setShowConvert(false) }, [load])
 
   // When the in-app reader closes, re-fetch so Continue % and status are fresh
   const prevReaderBook = useRef(readerBook)
@@ -813,6 +883,21 @@ export default function BookDrawer({ bookId, onClose, onStatusChange, onRemoved 
                     book={book}
                     onConfirm={() => { load(); setShowRename(false) }}
                     onCancel={() => setShowRename(false)}
+                  />
+                )}
+                {(CONVERT_TARGETS[book.format] || []).length > 0 && (
+                  <button
+                    className="btn btn-ghost"
+                    onClick={() => { setShowConvert(c => !c); setShowRemove(false) }}
+                  >
+                    🔄 Convert Format…
+                  </button>
+                )}
+                {showConvert && (
+                  <ConvertPanel
+                    book={book}
+                    onDone={() => { refreshLibrary(); setShowConvert(false) }}
+                    onCancel={() => setShowConvert(false)}
                   />
                 )}
 
