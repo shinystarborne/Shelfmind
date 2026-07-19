@@ -231,6 +231,7 @@ class Store {
       tags:         st.tags       || [],
       started_at:   st.started_at ?? null,
       finished_at:  st.finished_at ?? null,
+      reading_position: st.reading_position || null,
     }
   }
 
@@ -280,6 +281,13 @@ class Store {
   setTags(bookId, tags) {
     if (!this.states[bookId]) this.states[bookId] = {}
     this.states[bookId].tags = Array.isArray(tags) ? tags : []
+    writeJson(this._statesFile, this.states)
+  }
+
+  // Where the in-app reader left off: { spine, frac, percent, updated_at }
+  setReadingPosition(bookId, pos) {
+    if (!this.states[bookId]) this.states[bookId] = {}
+    this.states[bookId].reading_position = { ...pos, updated_at: Date.now() }
     writeJson(this._statesFile, this.states)
   }
 

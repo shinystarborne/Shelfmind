@@ -1722,3 +1722,330 @@ h3 { font-size: 18px; }
   margin-top: 2px;
   text-transform: capitalize;
 }
+
+/* ── In-app EPUB Reader ───────────────────────────────────────────────────── */
+.reader {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  background: var(--r-bg);
+  color: var(--r-fg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Top / bottom chrome — slide away when idle */
+.reader-topbar,
+.reader-bottombar {
+  position: absolute;
+  left: 0; right: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--r-chrome);
+  backdrop-filter: blur(8px);
+  border-color: var(--r-border);
+  transition: transform 0.25s ease, opacity 0.25s ease;
+}
+.reader-topbar {
+  top: 0;
+  padding: 10px 16px;
+  /* Clear the Electron overlay window controls (min/max/close) in the top-right;
+     in a plain browser env() falls back so this computes to the normal 16px. */
+  padding-right: calc(100vw - env(titlebar-area-width, calc(100vw - 16px)) + 8px);
+  border-bottom: 1px solid var(--r-border);
+  transform: translateY(-100%);
+  opacity: 0;
+}
+.reader-bottombar {
+  bottom: 0;
+  padding: 10px 20px;
+  border-top: 1px solid var(--r-border);
+  transform: translateY(100%);
+  opacity: 0;
+}
+.reader.chrome-visible .reader-topbar,
+.reader.chrome-visible .reader-bottombar {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+.reader-book-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.reader-title-main    { font-weight: 700; }
+.reader-title-chapter { color: var(--r-soft); }
+
+.reader-topbar-actions { display: flex; gap: 6px; }
+
+.reader-icon-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--r-fg);
+  font-size: 17px;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+.reader-icon-btn:hover  { background: color-mix(in srgb, var(--r-fg) 10%, transparent); }
+.reader-icon-btn.active { background: color-mix(in srgb, var(--r-accent) 22%, transparent); border-color: var(--r-accent); }
+.reader-aa { font-size: 14px; font-weight: 700; font-family: Georgia, serif; }
+
+/* Stage + page */
+.reader-stage {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+.reader-page {
+  position: relative;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.reader-frame {
+  border: none;
+  display: block;
+  background: transparent;
+}
+.reader-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  color: var(--r-soft);
+  background: var(--r-bg);
+}
+
+/* Side arrows */
+.reader-arrow {
+  flex-shrink: 0;
+  width: 52px;
+  height: 120px;
+  background: transparent;
+  border: none;
+  color: var(--r-soft);
+  font-size: 42px;
+  cursor: pointer;
+  opacity: 0.25;
+  transition: opacity 0.2s, color 0.2s;
+  border-radius: 12px;
+  line-height: 1;
+}
+.reader-arrow:hover { opacity: 1; color: var(--r-accent); }
+
+/* Bottom progress */
+.reader-progress-label {
+  font-size: 11.5px;
+  color: var(--r-soft);
+  min-width: 56px;
+  font-variant-numeric: tabular-nums;
+}
+.reader-progress-pct { text-align: right; min-width: 38px; }
+.reader-slider {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--r-fg) 18%, transparent);
+  outline: none;
+  cursor: pointer;
+}
+.reader-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--r-accent);
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+.reader-slider::-webkit-slider-thumb:hover { transform: scale(1.25); }
+
+/* Panels */
+.reader-panel-dismiss { position: absolute; inset: 0; z-index: 15; }
+.reader-toc,
+.reader-settings {
+  position: absolute;
+  z-index: 20;
+  background: var(--r-chrome);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--r-border);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+  animation: reader-panel-in 0.18s ease;
+}
+@keyframes reader-panel-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.reader-toc {
+  top: 54px;
+  left: 0;
+  bottom: 0;
+  width: 320px;
+  max-width: 85vw;
+  border-left: none;
+  border-bottom: none;
+  display: flex;
+  flex-direction: column;
+  animation-name: reader-toc-in;
+}
+@keyframes reader-toc-in {
+  from { opacity: 0; transform: translateX(-16px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.reader-panel-title {
+  font-family: var(--font-serif);
+  font-size: 16px;
+  font-weight: 600;
+  padding: 14px 16px 10px;
+  color: var(--r-fg);
+}
+.reader-toc-list {
+  flex: 1;
+  overflow-y: auto;
+  padding-bottom: 16px;
+}
+.reader-toc-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: var(--r-fg);
+  font-size: 13px;
+  padding: 8px 16px;
+  cursor: pointer;
+  line-height: 1.4;
+  transition: background 0.12s;
+}
+.reader-toc-item:hover  { background: color-mix(in srgb, var(--r-fg) 8%, transparent); }
+.reader-toc-item.active {
+  background: color-mix(in srgb, var(--r-accent) 20%, transparent);
+  font-weight: 700;
+  border-right: 3px solid var(--r-accent);
+}
+
+.reader-settings {
+  top: 54px;
+  right: 12px;
+  width: 264px;
+  border-radius: 14px;
+  padding: 4px 16px 18px;
+}
+.reader-setting-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--r-soft);
+  margin: 14px 0 6px;
+}
+.reader-theme-row { display: flex; gap: 10px; }
+.reader-theme-swatch {
+  flex: 1;
+  height: 40px;
+  border-radius: 10px;
+  border: 2px solid var(--r-border);
+  font-size: 15px;
+  font-family: Georgia, serif;
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.15s;
+}
+.reader-theme-swatch:hover  { transform: translateY(-1px); }
+.reader-theme-swatch.active { border-color: var(--r-accent); box-shadow: 0 0 0 1px var(--r-accent); }
+
+.reader-stepper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.reader-stepper button {
+  width: 34px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid var(--r-border);
+  background: transparent;
+  color: var(--r-fg);
+  font-size: 16px;
+  cursor: pointer;
+}
+.reader-stepper button:hover { border-color: var(--r-accent); color: var(--r-accent); }
+.reader-stepper span {
+  flex: 1;
+  text-align: center;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--r-fg);
+}
+
+.reader-seg {
+  display: flex;
+  border: 1px solid var(--r-border);
+  border-radius: 9px;
+  overflow: hidden;
+}
+.reader-seg button {
+  flex: 1;
+  padding: 7px 0;
+  background: transparent;
+  border: none;
+  color: var(--r-soft);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.reader-seg button + button { border-left: 1px solid var(--r-border); }
+.reader-seg button.active {
+  background: color-mix(in srgb, var(--r-accent) 22%, transparent);
+  color: var(--r-fg);
+  font-weight: 700;
+}
+
+.reader-error {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-size: 15px;
+}
+
+/* Reading-progress bar on library cards */
+.book-progress {
+  height: 3px;
+  border-radius: 99px;
+  background: var(--border-soft);
+  overflow: hidden;
+  margin-top: 5px;
+}
+.book-progress-fill {
+  height: 100%;
+  border-radius: 99px;
+  background: var(--status-reading);
+}
+
+@media (max-width: 700px) {
+  .reader-arrow { display: none; }
+  .reader-page  { height: 100%; }
+}

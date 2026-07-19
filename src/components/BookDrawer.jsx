@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { API, useApp } from '../App'
 import { coverSrc, initials, displayAuthor, formatFileSize } from './BookCard'
 import KindleModal from './KindleModal'
@@ -445,7 +445,7 @@ function TagsEditor({ bookId, tags, onChange }) {
 
 // ── Main drawer ───────────────────────────────────────────────────────────────
 export default function BookDrawer({ bookId, onClose, onStatusChange, onRemoved }) {
-  const { toast, prefs, refreshLibrary } = useApp()
+  const { toast, prefs, refreshLibrary, openReader, readerBook } = useApp()
   const [book,        setBook]        = useState(null)
   const [note,        setNote]        = useState('')
   const [noteDirty,   setNoteDirty]   = useState(false)
@@ -468,6 +468,13 @@ export default function BookDrawer({ bookId, onClose, onStatusChange, onRemoved 
   }, [bookId])
 
   useEffect(() => { load(); setShowEdit(false); setShowRemove(false); setShowRename(false) }, [load])
+
+  // When the in-app reader closes, re-fetch so Continue % and status are fresh
+  const prevReaderBook = useRef(readerBook)
+  useEffect(() => {
+    if (prevReaderBook.current && !readerBook) load()
+    prevReaderBook.current = readerBook
+  }, [readerBook, load])
 
   useEffect(() => {
     if (!noteDirty) return
@@ -740,6 +747,21 @@ export default function BookDrawer({ bookId, onClose, onStatusChange, onRemoved 
             <div className="drawer-section">
               <div className="drawer-section-label">Actions</div>
               <div className="drawer-actions">
+                {book.format === 'epub' && (
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => openReader(book)}
+                    title="Read in ShelfMind"
+                  >
+                    📖 {(() => {
+                      const pos = book.reading_position
+                      if (!pos || (pos.spine === 0 && !pos.frac)) return 'Read'
+                      return pos.percent >= 1
+                        ? `Continue Reading · ${Math.round(pos.percent)}%`
+                        : 'Continue Reading'
+                    })()}
+                  </button>
+                )}
                 {window.electronAPI && (
                   <button
                     className="btn btn-primary"
@@ -747,7 +769,7 @@ export default function BookDrawer({ bookId, onClose, onStatusChange, onRemoved 
                     onClick={() => window.electronAPI.openFile(book.path)}
                     title="Open in your default reader app"
                   >
-                    📖 Open
+                    📂 Open
                   </button>
                 )}
                 <button className="btn btn-primary" onClick={() => setShowKindle(true)}>
