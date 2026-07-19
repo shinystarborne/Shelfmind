@@ -4,6 +4,7 @@ import Insights from './views/Insights'
 import Preferences from './views/Preferences'
 import ReadingList from './views/ReadingList'
 import PdfTab from './views/PdfTab'
+import Reader from './components/Reader'
 
 // When loaded in Electron (file://) hostname is empty — fall back to localhost.
 // When opened in a browser via QR code the hostname is the LAN IP, so API calls go to the right machine.
@@ -82,6 +83,10 @@ export default function App() {
   const [activeListId, setActiveListId] = useState(null)
   const [pdfTabs, setPdfTabs] = useState([])
   const [activePdfTabId, setActivePdfTabId] = useState(null)
+  const [readerBook, setReaderBook] = useState(null)   // book object → reader open
+
+  const openReader  = useCallback(book => setReaderBook(book), [])
+  const closeReader = useCallback(() => setReaderBook(null), [])
 
   const loadLists = useCallback(() => {
     fetch(`${API}/lists`).then(r => r.json()).then(setLists).catch(() => {})
@@ -153,7 +158,7 @@ export default function App() {
   const refreshPrefs = () => fetch(`${API}/preferences`).then(r => r.json()).then(setPrefs)
 
   return (
-    <AppCtx.Provider value={{ toast, prefs, refreshPrefs, toggleTheme, refreshLibrary, setRefreshLibrary, pdfTabs, loadPdfTabs }}>
+    <AppCtx.Provider value={{ toast, prefs, refreshPrefs, toggleTheme, refreshLibrary, setRefreshLibrary, pdfTabs, loadPdfTabs, openReader, readerBook }}>
       <div className={`app-shell${sidebarOpen ? '' : ' sidebar-collapsed'}`}>
         {/* Sidebar */}
         <aside className="sidebar">
@@ -297,6 +302,8 @@ export default function App() {
           </button>
         </nav>
       </div>
+
+      {readerBook && <Reader book={readerBook} onClose={closeReader} />}
 
       <Toasts toasts={toasts} onDismiss={dismissToast} />
     </AppCtx.Provider>

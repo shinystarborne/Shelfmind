@@ -83,6 +83,54 @@ function startServer(port = 3001) {
       res.json({ ok: true })
     })
 
+    // ── In-app EPUB reader ─────────────────────────────────────────────────────
+
+    app.get('/api/books/:id/epub/structure', (req, res) => {
+      const book = store.getBook(req.params.id)
+      if (!book) return res.status(404).json({ error: 'Not found' })
+      if (book.format !== 'epub') return res.status(400).json({ error: 'Not an epub' })
+      try {
+        const { getStructure } = require('./epubReader')
+        res.json(getStructure(book.path))
+      } catch (err) {
+        res.status(500).json({ error: err.message })
+      }
+    })
+
+    app.get('/api/books/:id/epub/res/*', (req, res) => {
+      const book = store.getBook(req.params.id)
+      if (!book) return res.status(404).json({ error: 'Not found' })
+      try {
+        const { getResource } = require('./epubReader')
+        const r = getResource(book.path, req.params[0])
+        if (!r) return res.status(404).json({ error: 'Entry not found in epub' })
+        res.setHeader('Content-Type', r.mime)
+        res.setHeader('Cache-Control', 'no-cache')
+        res.send(r.data)
+      } catch (err) {
+        res.status(500).json({ error: err.message })
+      }
+    })
+
+    app.put('/api/books/:id/position', (req, res) => {
+      const book = store.getBook(req.params.id)
+      if (!book) return res.status(404).json({ error: 'Not found' })
+      const { spine, frac, percent } = req.body || {}
+      if (typeof spine !== 'number') return res.status(400).json({ error: 'spine index required' })
+      store.setReadingPosition(req.params.id, {
+        spine,
+        frac:    typeof frac    === 'number' ? Math.max(0, Math.min(1, frac))    : 0,
+        percent: typeof percent === 'number' ? Math.max(0, Math.min(100, percent)) : 0,
+      })
+      // Opening a fresh book and actually reading it: promote unread → reading.
+      // Any real movement counts — percent alone stays ~0 for ages in big books.
+      const movedIn = spine > 0 || (frac || 0) > 0.05 || (percent || 0) > 1
+      if ((book.read_status === 'unread' || !book.read_status) && movedIn) {
+        store.setStatusWithDates(req.params.id, 'reading')
+      }
+      res.json({ ok: true })
+    })
+
     app.get('/api/books/:id/epub-images', (req, res) => {
       const book = store.getBook(req.params.id)
       if (!book) return res.status(404).json({ error: 'Not found' })

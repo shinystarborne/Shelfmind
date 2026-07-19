@@ -108,6 +108,11 @@ export default function BookCard({ book, selected, onClick, selectable, checked,
               </span>
             )}
           </div>
+          {status === 'reading' && book.reading_position?.percent >= 1 && (
+            <div className="book-progress" title={`${Math.round(book.reading_position.percent)}% read`}>
+              <div className="book-progress-fill" style={{ width: `${book.reading_position.percent}%` }} />
+            </div>
+          )}
         </div>
       </div>
     </div>
