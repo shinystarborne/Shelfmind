@@ -49,6 +49,76 @@ function resolvePath(baseFile, href) {
   return { path: parts.join('/'), fragment }
 }
 
+// ── Highlights ────────────────────────────────────────────────────────────────
+export const HL_COLORS = {
+  yellow: 'rgba(240, 195, 60, 0.45)',
+  green:  'rgba(125, 195, 125, 0.45)',
+  pink:   'rgba(240, 135, 165, 0.42)',
+  blue:   'rgba(115, 175, 240, 0.42)',
+}
+
+// Absolute character offsets of a selection Range within root's textContent
+function rangeToOffsets(root, range) {
+  const doc = root.ownerDocument
+  const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+  let acc = 0, start = -1, end = -1
+  while (walker.nextNode()) {
+    const n = walker.currentNode
+    if (n === range.startContainer) start = acc + range.startOffset
+    if (n === range.endContainer)   end   = acc + range.endOffset
+    acc += n.nodeValue.length
+  }
+  if (start < 0 || end <= start) return null
+  return { start, end }
+}
+
+// Wrap [start, end) of the chapter text in <mark> elements. Re-anchors by
+// searching for the stored text if the offsets no longer line up (book updated).
+function applyHighlight(doc, h) {
+  const root = doc.body
+  const full = root.textContent
+  let { start, end } = h
+  if (full.slice(start, end) !== h.text) {
+    const idx = full.indexOf(h.text)
+    if (idx < 0) return false
+    start = idx
+    end   = idx + h.text.length
+  }
+  const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+  const targets = []
+  let acc = 0
+  while (walker.nextNode()) {
+    const n   = walker.currentNode
+    const len = n.nodeValue.length
+    if (acc + len > start && acc < end) {
+      targets.push({ n, from: Math.max(0, start - acc), to: Math.min(len, end - acc) })
+    }
+    acc += len
+    if (acc >= end) break
+  }
+  for (const t of targets) {
+    let node = t.n
+    if (t.to < node.nodeValue.length) node.splitText(t.to)
+    if (t.from > 0) node = node.splitText(t.from)
+    const mark = doc.createElement('mark')
+    mark.className = 'sm-hl'
+    mark.dataset.hid = h.id
+    mark.style.setProperty('background-color', HL_COLORS[h.color] || HL_COLORS.yellow, 'important')
+    node.parentNode.insertBefore(mark, node)
+    mark.appendChild(node)
+  }
+  return targets.length > 0
+}
+
+function removeHighlightMarks(doc, hid) {
+  doc.querySelectorAll(`mark.sm-hl[data-hid="${hid}"]`).forEach(mark => {
+    const parent = mark.parentNode
+    while (mark.firstChild) parent.insertBefore(mark.firstChild, mark)
+    parent.removeChild(mark)
+    parent.normalize()
+  })
+}
+
 // Books that hardcode pt/px font sizes would ignore the reader's base size —
 // rewrite absolute sizes to rem so everything scales with the user setting.
 function normalizeFontSizes(idoc) {
@@ -77,7 +147,7 @@ function normalizeFontSizes(idoc) {
   })
 }
 
-export default function Reader({ book, onClose }) {
+export default function Reader({ book, target, onClose }) {
   const { toast, refreshLibrary } = useApp()
   const [structure, setStructure] = useState(null)
   const [settings, setSettings]   = useState(loadSettings)
@@ -88,6 +158,10 @@ export default function Reader({ book, onClose }) {
   const [error, setError]         = useState(null)
   // Position shown in the UI — the source of truth lives in posRef
   const [ui, setUi] = useState({ spine: 0, page: 0, pages: 1, percent: 0 })
+  // Floating toolbars: over a fresh selection / over an existing highlight
+  const [selBar, setSelBar]   = useState(null)   // { x, y, sel: {start, end, text} }
+  const [markBar, setMarkBar] = useState(null)   // { x, y, hid }
+  const hlRef = useRef([])                       // this book's highlights
 
   const iframeRef  = useRef(null)
   const stageRef   = useRef(null)
@@ -188,6 +262,8 @@ export default function Reader({ book, onClose }) {
     const st = structRef.current
     if (!st || !st.spine[spineIdx]) return
     setLoading(true)
+    setSelBar(null)
+    setMarkBar(null)
     const chapterPath = st.spine[spineIdx].href
     try {
       const raw = await fetch(resURL(chapterPath)).then(r => {
@@ -250,7 +326,9 @@ export default function Reader({ book, onClose }) {
           hyphens: auto;
         }
         ${fontRule}
-        body * { color: ${th.fg} !important; background-color: transparent !important; }
+        body * { color: ${th.fg} !important; }
+        body *:not(.sm-hl) { background-color: transparent !important; }
+        mark.sm-hl { color: inherit !important; padding: 0 1px; border-radius: 2px; cursor: pointer; }
         body p, body li, body blockquote { line-height: ${s.lineHeight} !important; }
         h1, h2, h3, h4, h5, h6 { break-after: avoid; }
         img, svg, video { max-width: 100% !important; max-height: ${geo.H - 8}px !important; height: auto; object-fit: contain; break-inside: avoid; }
@@ -281,6 +359,12 @@ export default function Reader({ book, onClose }) {
 
         try { normalizeFontSizes(idoc) } catch { /* never block rendering */ }
 
+        // Paint saved highlights before measuring (marks are inline, layout-safe)
+        for (const h of hlRef.current) {
+          if (h.spine === spineIdx) { try { applyHighlight(idoc, h) } catch { /* skip */ } }
+        }
+
+        const step = () => geometry()?.step || 1
         const settle = () => {
           const pages = measurePages()
           let page = 0
@@ -289,7 +373,11 @@ export default function Reader({ book, onClose }) {
             const el = idoc.getElementById(target.fragment) ||
                        idoc.querySelector(`[name="${CSS.escape(target.fragment)}"]`)
             // Fresh load = no transform yet, so left offset maps directly to a page
-            if (el) page = Math.max(0, Math.floor(el.getBoundingClientRect().left / (geometry()?.step || 1)))
+            if (el) page = Math.max(0, Math.floor(el.getBoundingClientRect().left / step()))
+          }
+          else if (target.highlight) {
+            const el = idoc.querySelector(`mark.sm-hl[data-hid="${target.highlight}"]`)
+            if (el) page = Math.max(0, Math.floor(el.getBoundingClientRect().left / step()))
           }
           else if (target.frac)        page = Math.round(target.frac * (pages - 1))
           setPosition(spineIdx, page, pages, false)
@@ -308,7 +396,45 @@ export default function Reader({ book, onClose }) {
 
         // Interactions inside the page
         idoc.addEventListener('mousemove', pokeChrome)
+
+        // Selecting text → floating highlight toolbar (positioned in parent coords)
+        idoc.addEventListener('mouseup', () => {
+          setTimeout(() => {
+            const sel = idoc.getSelection()
+            const text = sel?.toString() || ''
+            if (!text.trim() || sel.rangeCount === 0) { setSelBar(null); return }
+            const range = sel.getRangeAt(0)
+            let off = rangeToOffsets(idoc.body, range)
+            if (!off) {
+              const idx = idoc.body.textContent.indexOf(text)
+              if (idx < 0) return
+              off = { start: idx, end: idx + text.length }
+            }
+            // Trim whitespace off the edges so stored offsets match trimmed text
+            let { start, end } = off
+            const full = idoc.body.textContent
+            while (start < end && /\s/.test(full[start]))   start++
+            while (end > start && /\s/.test(full[end - 1])) end--
+            if (start >= end) return
+            const rect  = range.getBoundingClientRect()
+            const irect = iframe.getBoundingClientRect()
+            setMarkBar(null)
+            setSelBar({
+              x: irect.left + rect.left + rect.width / 2,
+              y: irect.top + rect.top,
+              sel: { start, end, text: full.slice(start, end) },
+            })
+          }, 10)
+        })
+
         idoc.addEventListener('click', (e) => {
+          const mark = e.target.closest?.('mark.sm-hl')
+          if (mark) {
+            const irect = iframe.getBoundingClientRect()
+            setSelBar(null)
+            setMarkBar({ x: irect.left + e.clientX, y: irect.top + e.clientY, hid: mark.dataset.hid })
+            return
+          }
           const link = e.target.closest?.('a[data-sm-link], a[data-sm-external]')
           if (link) {
             e.preventDefault()
@@ -320,6 +446,7 @@ export default function Reader({ book, onClose }) {
             return
           }
           if (idoc.getSelection()?.toString()) return   // selecting text, not turning
+          setMarkBar(null)
           const x = e.clientX / idoc.documentElement.clientWidth
           if (x < 0.22)      turnRef.current(-1)
           else if (x > 0.78) turnRef.current(1)
@@ -345,6 +472,8 @@ export default function Reader({ book, onClose }) {
   const turn = useCallback((dir) => {
     const st = structRef.current
     if (!st) return
+    setSelBar(null)
+    setMarkBar(null)
     const { spine, page, pages } = posRef.current
     if (dir > 0) {
       if (page < pages - 1) setPosition(spine, page + 1, pages)
@@ -402,12 +531,19 @@ export default function Reader({ book, onClose }) {
     Promise.all([
       fetch(`${API}/books/${book.id}/epub/structure`).then(r => { if (!r.ok) throw new Error('structure failed'); return r.json() }),
       fetch(`${API}/books/${book.id}`).then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch(`${API}/books/${book.id}/highlights`).then(r => r.ok ? r.json() : []).catch(() => []),
     ])
-      .then(([st, fresh]) => {
+      .then(([st, fresh, highlights]) => {
         if (!alive) return
         if (!st.spine?.length) throw new Error('No readable chapters found')
         structRef.current = st
+        hlRef.current = highlights
         setStructure(st)
+        // A jump target (from the Quotes view) wins over the saved position
+        if (target?.hid != null && target.spine < st.spine.length) {
+          loadChapterRef.current(target.spine, { highlight: target.hid })
+          return
+        }
         const pos = fresh?.reading_position || book.reading_position
         const spine = pos && pos.spine < st.spine.length ? pos.spine : 0
         loadChapterRef.current(spine, { frac: pos?.frac || 0 })
@@ -457,6 +593,47 @@ export default function Reader({ book, onClose }) {
     window.addEventListener('resize', onResize)
     return () => { clearTimeout(t); window.removeEventListener('resize', onResize) }
   }, [])
+
+  // ── Create / remove highlights ──────────────────────────────────────────────
+  const createHighlight = useCallback(async (color) => {
+    if (!selBar?.sel) return
+    const { spine } = posRef.current
+    const payload = { spine, ...selBar.sel, color }
+    setSelBar(null)
+    try {
+      const h = await fetch(`${API}/books/${book.id}/highlights`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(payload),
+      }).then(r => { if (!r.ok) throw new Error('save failed'); return r.json() })
+      hlRef.current.push(h)
+      const idoc = iframeRef.current?.contentDocument
+      if (idoc) {
+        applyHighlight(idoc, h)
+        idoc.getSelection()?.removeAllRanges()
+      }
+    } catch {
+      toast('Could not save highlight', 'error')
+    }
+  }, [book.id, selBar, toast])
+
+  const deleteHighlight = useCallback(async (hid) => {
+    setMarkBar(null)
+    try {
+      await fetch(`${API}/books/${book.id}/highlights/${hid}`, { method: 'DELETE' })
+      hlRef.current = hlRef.current.filter(h => h.id !== hid)
+      const idoc = iframeRef.current?.contentDocument
+      if (idoc) removeHighlightMarks(idoc, hid)
+    } catch {
+      toast('Could not remove highlight', 'error')
+    }
+  }, [book.id, toast])
+
+  const copyHighlight = useCallback((hid) => {
+    const h = hlRef.current.find(x => x.id === hid)
+    if (h) { navigator.clipboard.writeText(h.text.replace(/\s+/g, ' ').trim()); toast('Quote copied') }
+    setMarkBar(null)
+  }, [toast])
 
   // ── Seek via progress slider ────────────────────────────────────────────────
   const seekTo = useCallback((pct) => {
@@ -588,6 +765,40 @@ export default function Reader({ book, onClose }) {
           {ui.percent >= 1 ? `${Math.round(ui.percent)}%` : ui.percent > 0 ? '<1%' : '0%'}
         </span>
       </div>
+
+      {/* Highlight toolbar over a fresh selection */}
+      {selBar && (
+        <div
+          className="reader-selbar"
+          style={{ left: Math.max(90, Math.min(window.innerWidth - 90, selBar.x)), top: Math.max(52, selBar.y - 46) }}
+        >
+          {Object.entries(HL_COLORS).map(([name, c]) => (
+            <button
+              key={name}
+              className="reader-hl-dot"
+              style={{ background: c.replace(/[\d.]+\)$/, '0.9)') }}
+              title={`Highlight ${name}`}
+              onClick={() => createHighlight(name)}
+            />
+          ))}
+          <button
+            className="reader-hl-copy"
+            title="Copy selection"
+            onClick={() => { navigator.clipboard.writeText(selBar.sel.text.replace(/\s+/g, ' ').trim()); toast('Copied'); setSelBar(null) }}
+          >📋</button>
+        </div>
+      )}
+
+      {/* Actions over an existing highlight */}
+      {markBar && (
+        <div
+          className="reader-selbar"
+          style={{ left: Math.max(90, Math.min(window.innerWidth - 90, markBar.x)), top: Math.max(52, markBar.y - 46) }}
+        >
+          <button className="reader-hl-copy" onClick={() => copyHighlight(markBar.hid)}>📋 Copy</button>
+          <button className="reader-hl-copy" onClick={() => deleteHighlight(markBar.hid)}>🗑 Remove</button>
+        </div>
+      )}
 
       {/* TOC panel */}
       {tocOpen && (

@@ -131,6 +131,62 @@ function startServer(port = 3001) {
       res.json({ ok: true })
     })
 
+    // ── Highlights ─────────────────────────────────────────────────────────────
+
+    app.get('/api/highlights', (_, res) => res.json(store.getAllHighlights()))
+
+    app.get('/api/books/:id/highlights', (req, res) => {
+      res.json(store.getHighlights(req.params.id))
+    })
+
+    app.post('/api/books/:id/highlights', (req, res) => {
+      const book = store.getBook(req.params.id)
+      if (!book) return res.status(404).json({ error: 'Not found' })
+      const { spine, start, end, text, color } = req.body || {}
+      if (typeof spine !== 'number' || typeof start !== 'number' || typeof end !== 'number' || !text?.trim()) {
+        return res.status(400).json({ error: 'spine, start, end, text required' })
+      }
+      res.json(store.addHighlight(req.params.id, { spine, start, end, text, color }))
+    })
+
+    app.delete('/api/books/:id/highlights/:hid', (req, res) => {
+      if (!store.deleteHighlight(req.params.id, req.params.hid)) {
+        return res.status(404).json({ error: 'Not found' })
+      }
+      res.json({ ok: true })
+    })
+
+    // Append highlights to the user's personal quotes.json collection
+    // (format: [{ text, author, book, tags: [] }]). Dedupes by exact text.
+    app.post('/api/quotes-export', (req, res) => {
+      const quotesPath = store.getPref('quotes_json_path')
+      if (!quotesPath) return res.status(400).json({ error: 'quotes_json_path preference not set' })
+      const { quotes } = req.body || {}
+      if (!Array.isArray(quotes) || quotes.length === 0) {
+        return res.status(400).json({ error: 'quotes array required' })
+      }
+      try {
+        let existing = []
+        if (fs.existsSync(quotesPath)) {
+          existing = JSON.parse(fs.readFileSync(quotesPath, 'utf8'))
+          if (!Array.isArray(existing)) throw new Error('quotes.json is not a JSON array')
+        }
+        const known = new Set(existing.map(q => (q.text || '').trim()))
+        let added = 0
+        for (const q of quotes) {
+          const text = (q.text || '').trim()
+          if (!text || known.has(text)) continue
+          existing.push({ text, author: q.author || '', book: q.book || '', tags: [] })
+          known.add(text)
+          added++
+        }
+        if (added > 0) fs.writeFileSync(quotesPath, JSON.stringify(existing, null, 2), 'utf8')
+        res.json({ ok: true, added, skipped: quotes.length - added, total: existing.length, path: quotesPath })
+      } catch (err) {
+        res.status(500).json({ error: err.message })
+      }
+    })
+
     app.get('/api/books/:id/epub-images', (req, res) => {
       const book = store.getBook(req.params.id)
       if (!book) return res.status(404).json({ error: 'Not found' })
@@ -314,7 +370,7 @@ function startServer(port = 3001) {
     app.get('/api/preferences', (_, res) => res.json(store.getPrefs()))
 
     app.put('/api/preferences', (req, res) => {
-      const allowed = ['library_path', 'kindle_email', 'kindle_mode', 'theme', 'default_view', 'reading_goal']
+      const allowed = ['library_path', 'kindle_email', 'kindle_mode', 'theme', 'default_view', 'reading_goal', 'quotes_json_path']
       const update  = {}
       for (const k of allowed) { if (k in req.body) update[k] = req.body[k] }
       store.setPrefs(update)
