@@ -4,7 +4,7 @@ const crypto = require('crypto')
 const AdmZip = require('adm-zip')
 const { XMLParser } = require('fast-xml-parser')
 
-const SUPPORTED_EXTS = new Set(['.epub', '.mobi', '.fb2', '.zip'])
+const SUPPORTED_EXTS = new Set(['.epub', '.mobi', '.fb2', '.zip', '.doc', '.docx'])
 const SKIP_DIRS = new Set([
   'shelfmind', '.git', 'node_modules',
   '$RECYCLE.BIN', 'System Volume Information', 'release', 'dist',
@@ -202,7 +202,19 @@ async function scan(store, libraryPath, onProgress) {
     }
 
     const ext  = path.extname(filePath).toLowerCase().slice(1)
-    let meta   = ext === 'epub' ? parseEpub(filePath) : null
+    let meta   = null
+    if (ext === 'epub') {
+      meta = parseEpub(filePath)
+    } else if (ext === 'fb2' || ext === 'zip') {
+      // .zip is usually .fb2.zip; for epub-in-zip this returns null harmlessly
+      const { parseFb2Meta } = require('./fb2Reader')
+      const fb2 = parseFb2Meta(filePath)
+      if (fb2) meta = { ...fb2, seriesName: fb2.seriesName, seriesNum: fb2.seriesNum }
+    } else if (ext === 'docx') {
+      const { parseDocxMeta } = require('./docReader')
+      const d = parseDocxMeta(filePath)
+      if (d?.title) meta = { title: d.title, author: d.author || '', language: '', subjects: [], description: '', seriesName: '', seriesNum: null }
+    }
     const coverDataUrl = meta?.coverData || null
     if (meta) delete meta.coverData  // keep book obj lean
 
@@ -262,7 +274,9 @@ async function scan(store, libraryPath, onProgress) {
   const noCover = store.getBooksNeedingCovers().filter(b => !batch.some(e => e.book.id === b.id))
   for (const book of noCover) {
     try {
-      const parsed = parseEpub(book.path)
+      let parsed = null
+      if (book.format === 'epub') parsed = parseEpub(book.path)
+      else if (book.format === 'fb2' || book.format === 'zip') parsed = require('./fb2Reader').parseFb2Meta(book.path)
       if (parsed?.coverData) {
         store.setCover(book.id, parsed.coverData)
       }

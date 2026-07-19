@@ -747,7 +747,7 @@ export default function BookDrawer({ bookId, onClose, onStatusChange, onRemoved 
             <div className="drawer-section">
               <div className="drawer-section-label">Actions</div>
               <div className="drawer-actions">
-                {book.format === 'epub' && (
+                {['epub', 'fb2', 'zip', 'doc', 'docx'].includes(book.format) && (
                   <button
                     className="btn btn-primary"
                     onClick={() => openReader(book)}

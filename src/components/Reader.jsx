@@ -173,7 +173,7 @@ export default function Reader({ book, target, onClose }) {
   settingsRef.current = settings
 
   const resURL = useCallback((zipPath) =>
-    `${API}/books/${book.id}/epub/res/${zipPath.split('/').map(encodeURIComponent).join('/')}`,
+    `${API}/books/${book.id}/reader/res/${zipPath.split('/').map(encodeURIComponent).join('/')}`,
   [book.id])
 
   // ── Chrome auto-hide ────────────────────────────────────────────────────────
@@ -529,7 +529,10 @@ export default function Reader({ book, target, onClose }) {
   useEffect(() => {
     let alive = true
     Promise.all([
-      fetch(`${API}/books/${book.id}/epub/structure`).then(r => { if (!r.ok) throw new Error('structure failed'); return r.json() }),
+      fetch(`${API}/books/${book.id}/reader/structure`).then(async r => {
+        if (!r.ok) throw new Error((await r.json().catch(() => null))?.error || 'Could not open this book')
+        return r.json()
+      }),
       fetch(`${API}/books/${book.id}`).then(r => r.ok ? r.json() : null).catch(() => null),
       fetch(`${API}/books/${book.id}/highlights`).then(r => r.ok ? r.json() : []).catch(() => []),
     ])
