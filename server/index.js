@@ -83,27 +83,26 @@ function startServer(port = 3001) {
       res.json({ ok: true })
     })
 
-    // ── In-app EPUB reader ─────────────────────────────────────────────────────
+    // ── In-app reader (epub / fb2 / doc / docx) ────────────────────────────────
 
-    app.get('/api/books/:id/epub/structure', (req, res) => {
+    app.get('/api/books/:id/reader/structure', async (req, res) => {
       const book = store.getBook(req.params.id)
       if (!book) return res.status(404).json({ error: 'Not found' })
-      if (book.format !== 'epub') return res.status(400).json({ error: 'Not an epub' })
       try {
-        const { getStructure } = require('./epubReader')
-        res.json(getStructure(book.path))
+        const { getReaderStructure } = require('./readerFormats')
+        res.json(await getReaderStructure(book))
       } catch (err) {
-        res.status(500).json({ error: err.message })
+        res.status(err.unsupported ? 400 : 500).json({ error: err.message })
       }
     })
 
-    app.get('/api/books/:id/epub/res/*', (req, res) => {
+    app.get('/api/books/:id/reader/res/*', async (req, res) => {
       const book = store.getBook(req.params.id)
       if (!book) return res.status(404).json({ error: 'Not found' })
       try {
-        const { getResource } = require('./epubReader')
-        const r = getResource(book.path, req.params[0])
-        if (!r) return res.status(404).json({ error: 'Entry not found in epub' })
+        const { getReaderResource } = require('./readerFormats')
+        const r = await getReaderResource(book, req.params[0])
+        if (!r) return res.status(404).json({ error: 'Entry not found in book' })
         res.setHeader('Content-Type', r.mime)
         res.setHeader('Cache-Control', 'no-cache')
         res.send(r.data)
