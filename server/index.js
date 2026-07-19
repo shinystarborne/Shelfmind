@@ -301,6 +301,61 @@ function startServer(port = 3001) {
       res.json(result)
     })
 
+    // ── Convert format (fb2/doc→epub, epub/doc→fb2) ────────────────────────────
+    // Writes the converted file next to the original and registers it as a new
+    // library book carrying over metadata + cover. The original is untouched.
+    app.post('/api/books/:id/convert', async (req, res) => {
+      const book = store.getBook(req.params.id)
+      if (!book) return res.status(404).json({ error: 'Not found' })
+      const target = (req.body?.target || '').toLowerCase()
+      if (!['epub', 'fb2'].includes(target)) {
+        return res.status(400).json({ error: 'target must be "epub" or "fb2"' })
+      }
+      try {
+        let coverFile = null
+        for (const ext of ['jpg', 'png', 'webp', 'gif']) {
+          const f = path.join(store.coversDir, `${book.id}.${ext}`)
+          if (fs.existsSync(f)) { coverFile = f; break }
+        }
+
+        const { convertBook } = require('./converter')
+        const result = await convertBook(book, target, { coverFile })
+        if (!result.ok) return res.status(400).json(result)
+
+        const crypto = require('crypto')
+        const stats  = fs.statSync(result.outPath)
+        const newId  = crypto.createHash('sha256').update(result.outPath).digest('hex').slice(0, 16)
+        store.batchUpsert([{
+          book: {
+            id:          newId,
+            path:        result.outPath,
+            title:       book.title,
+            author:      book.author || '',
+            author_canonical: book.author_canonical || book.author || '',
+            language:    book.language || '',
+            format:      target,
+            file_size:   stats.size,
+            file_mtime:  Math.floor(stats.mtimeMs),
+            subjects:    book.subjects || [],
+            description: book.description || '',
+            series_name: book.series_name || '',
+            series_num:  book.series_num ?? null,
+            added_at:    Math.floor(Date.now() / 1000),
+            removed:     false,
+            enriched:    book.enriched === true,
+          },
+          coverDataUrl: null,
+        }])
+        if (coverFile) {
+          try { fs.copyFileSync(coverFile, path.join(store.coversDir, `${newId}${path.extname(coverFile)}`)) } catch { /* cover is cosmetic */ }
+        }
+
+        res.json({ ok: true, newPath: result.outPath, newName: path.basename(result.outPath), bookId: newId })
+      } catch (err) {
+        res.status(500).json({ error: err.message })
+      }
+    })
+
     // Fetch OL preview without saving (for the edit panel)
     app.get('/api/books/:id/ol-preview', async (req, res) => {
       const book = store.getBook(req.params.id)
