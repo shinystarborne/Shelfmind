@@ -26,6 +26,8 @@ export default function Quotes() {
   const [items, setItems]       = useState(null)
   const [pathEdit, setPathEdit] = useState(null)   // null = closed, string = editing
   const [exporting, setExporting] = useState(false)
+  const [editingNote, setEditingNote] = useState(null)   // hid being edited
+  const [noteDraft, setNoteDraft]     = useState('')
 
   const load = useCallback(() => {
     fetch(`${API}/highlights`).then(r => r.json()).then(setItems).catch(() => setItems([]))
@@ -76,6 +78,23 @@ export default function Quotes() {
     await fetch(`${API}/books/${h.book_id}/highlights/${h.id}`, { method: 'DELETE' })
     setItems(list => list.filter(x => x.id !== h.id))
     toast('Highlight removed')
+  }
+
+  const startEditNote = (h) => { setEditingNote(h.id); setNoteDraft(h.note || '') }
+
+  const saveNote = async (h) => {
+    try {
+      const res = await fetch(`${API}/books/${h.book_id}/highlights/${h.id}`, {
+        method:  'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ note: noteDraft }),
+      }).then(r => { if (!r.ok) throw new Error(); return r.json() })
+      setItems(list => list.map(x => x.id === h.id ? { ...x, note: res.note } : x))
+      setEditingNote(null)
+      toast('Note saved')
+    } catch {
+      toast('Could not save note', 'error')
+    }
   }
 
   const openInBook = async (h) => {
@@ -182,10 +201,30 @@ export default function Quotes() {
             {g.quotes.map(h => (
               <div key={h.id} className="quote-card" style={{ borderLeftColor: BAR_COLORS[h.color] || BAR_COLORS.yellow }}>
                 <div className="quote-text">{clean(h.text)}</div>
+
+                {editingNote === h.id ? (
+                  <div className="quote-note-edit">
+                    <textarea
+                      autoFocus
+                      className="quote-note-textarea"
+                      value={noteDraft}
+                      onChange={e => setNoteDraft(e.target.value)}
+                      placeholder="Add a note…"
+                    />
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: 4 }}>
+                      <button className="btn btn-ghost" style={{ fontSize: 11 }} onClick={() => setEditingNote(null)}>Cancel</button>
+                      <button className="btn btn-primary" style={{ fontSize: 11 }} onClick={() => saveNote(h)}>Save</button>
+                    </div>
+                  </div>
+                ) : h.note ? (
+                  <div className="quote-note" onClick={() => startEditNote(h)} title="Click to edit note">📝 {h.note}</div>
+                ) : null}
+
                 <div className="quote-meta">
                   <span>{fmtDate(h.created_at)}</span>
                   <span className="quote-actions">
                     <button title="Copy" onClick={() => { navigator.clipboard.writeText(clean(h.text)); toast('Quote copied') }}>📋</button>
+                    <button title={h.note ? 'Edit note' : 'Add note'} onClick={() => startEditNote(h)}>📝</button>
                     <button title="Open in book" onClick={() => openInBook(h)}>📖</button>
                     <button title="Add to quotes collection" disabled={exporting} onClick={() => exportQuotes([toQuote(h)])}>✍️</button>
                     <button title="Remove highlight" onClick={() => remove(h)}>🗑</button>

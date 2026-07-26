@@ -103,6 +103,70 @@ function EnrichBar({ state, onStart, onDismiss }) {
   )
 }
 
+// ── Search index progress bar ─────────────────────────────────────────────────
+function SearchIndexBar({ state, onStart, onDismiss }) {
+  const pct = state.total > 0 ? Math.round((state.current / state.total) * 100) : 0
+
+  if (state.done) return (
+    <div className="enrich-banner">
+      <span style={{ color: 'var(--sage-dark)' }}>✓</span>
+      <span>
+        {state.total === 0
+          ? 'Search index already up to date'
+          : `Search index built — ${state.success}/${state.total} indexed`}
+      </span>
+      <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
+        <button
+          className="btn btn-ghost"
+          style={{ padding: '3px 10px', fontSize: 11 }}
+          onClick={() => onStart({ reset_failed: true })}
+          title="Retry books/PDFs that previously failed to extract"
+        >
+          ↻ Retry failed
+        </button>
+        <button
+          className="btn btn-ghost"
+          style={{ padding: '3px 10px', fontSize: 11 }}
+          onClick={() => onStart({ force: true })}
+          title="Re-extract text for every book and PDF"
+        >
+          ↻ Rebuild all
+        </button>
+        <button
+          className="btn btn-ghost"
+          style={{ padding: '3px 8px', fontSize: 11 }}
+          onClick={onDismiss}
+          title="Dismiss"
+        >✕</button>
+      </div>
+    </div>
+  )
+
+  if (state.running) return (
+    <div className="enrich-banner">
+      <span className="spin">↻</span>
+      <span>Building search index… {state.current}/{state.total} ({pct}%)</span>
+      <div className="enrich-bar">
+        <div className="enrich-bar-fill" style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="enrich-banner">
+      <span>🔎</span>
+      <span>Build a search index to find text inside your books and PDFs</span>
+      <button
+        className="btn btn-secondary"
+        style={{ marginLeft: 'auto', padding: '4px 12px', fontSize: 12 }}
+        onClick={() => onStart()}
+      >
+        Build Search Index
+      </button>
+    </div>
+  )
+}
+
 // ── Dropdown with fixed positioning ───────────────────────────────────────────
 function FixedDropdown({ label, active, items, selected, onSelect, onClose }) {
   const triggerRef = useRef(null)
@@ -322,7 +386,7 @@ function GroupSection({ name, books, selectedId, selectMode, selectedIds, onChec
 
 // ── Main Library view ─────────────────────────────────────────────────────────
 export default function Library() {
-  const { toast, prefs, setRefreshLibrary, refreshLibrary } = useApp()
+  const { toast, prefs, setRefreshLibrary, refreshLibrary, openPdfReader } = useApp()
   const [books, setBooks]           = useState([])
   const [loading, setLoading]       = useState(true)
   const [search, setSearch]         = useState('')
@@ -338,12 +402,17 @@ export default function Library() {
   const [languages, setLanguages]   = useState([])
   const [allTags, setAllTags]       = useState([])
   const [enrichState, setEnrichState] = useState({ running: false, done: false, current: 0, total: 0, success: 0 })
+  const [indexState, setIndexState] = useState({ running: false, done: false, current: 0, total: 0, success: 0 })
   const [selectMode, setSelectMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState([])
   const [duplicates, setDuplicates] = useState([])
   const [showDupsModal, setShowDupsModal] = useState(false)
+  const [ftHits, setFtHits] = useState(new Map())     // bookId -> {matchCount, matches}
+  const [ftPdfHits, setFtPdfHits] = useState([])      // pdf-kind results, shown separately
+  const [pdfHitsOpen, setPdfHitsOpen] = useState(false)
   const searchRef = useRef(null)
   const enrichPollRef = useRef(null)
+  const indexPollRef  = useRef(null)
 
   const loadBooks = useCallback(() => {
     setLoading(true)
@@ -379,6 +448,28 @@ export default function Library() {
     }).catch(() => {})
   }, [])
 
+  useEffect(() => {
+    fetch(`${API}/search-index/status`).then(r => r.json()).then(s => {
+      if (s.running) { setIndexState(s); startIndexPoll() }
+    }).catch(() => {})
+  }, [])
+
+  // Debounced library-wide full-text search — separate from Fuse's instant
+  // client-side metadata match, since this hits the server's cached text corpus.
+  useEffect(() => {
+    if (search.trim().length < 3) { setFtHits(new Map()); setFtPdfHits([]); return }
+    const t = setTimeout(() => {
+      fetch(`${API}/search?q=${encodeURIComponent(search.trim())}`)
+        .then(r => r.json())
+        .then(({ results }) => {
+          setFtHits(new Map((results || []).filter(r => r.kind === 'book').map(r => [r.id, r])))
+          setFtPdfHits((results || []).filter(r => r.kind === 'pdf'))
+        })
+        .catch(() => {})
+    }, 350)
+    return () => clearTimeout(t)
+  }, [search])
+
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e) => {
@@ -397,7 +488,7 @@ export default function Library() {
 
   // Fuse search
   const fuse = useMemo(() => new Fuse(books, {
-    keys: ['title', 'author', 'author_canonical', 'series_name'],
+    keys: ['title', 'author', 'author_canonical', 'series_name', 'description', 'subjects', 'tags'],
     threshold: 0.35,
     ignoreLocation: true,
   }), [books])
@@ -406,6 +497,24 @@ export default function Library() {
     let result = search.length > 1
       ? fuse.search(search).map(r => r.item)
       : [...books]
+
+    // Merge in full-text-only matches (books Fuse's metadata search missed,
+    // but whose cached body text contains the query) — tag with a snippet
+    // so BookCard can show why it matched.
+    if (ftHits.size > 0) {
+      const present = new Set(result.map(b => b.id))
+      const byId = new Map(books.map(b => [b.id, b]))
+      for (const [id, hit] of ftHits) {
+        const book = byId.get(id)
+        if (!book) continue
+        const snippet = hit.matches?.[0]?.snippet
+        if (present.has(id)) {
+          result = result.map(b => b.id === id ? { ...b, _ftSnippet: snippet } : b)
+        } else {
+          result.push({ ...book, _ftSnippet: snippet })
+        }
+      }
+    }
 
     // Tag filter (client-side)
     if (tagFilter) result = result.filter(b => (b.tags || []).includes(tagFilter))
@@ -421,7 +530,7 @@ export default function Library() {
       return 0
     })
     return result
-  }, [books, search, sort, fuse, tagFilter])
+  }, [books, search, sort, fuse, tagFilter, ftHits])
 
   const groupedByAuthor = useMemo(() => {
     if (view !== 'by-author') return null
@@ -519,6 +628,33 @@ export default function Library() {
     startEnrichPoll()
   }
 
+  // Search indexing
+  const startIndexPoll = () => {
+    if (indexPollRef.current) return
+    indexPollRef.current = setInterval(async () => {
+      const s = await fetch(`${API}/search-index/status`).then(r => r.json()).catch(() => null)
+      if (!s) return
+      setIndexState(s)
+      if (s.done || !s.running) {
+        clearInterval(indexPollRef.current)
+        indexPollRef.current = null
+        setTimeout(() => {
+          setIndexState(is => is.running ? is : { running: false, done: false, current: 0, total: 0, success: 0 })
+        }, 3000)
+      }
+    }, 1500)
+  }
+
+  const handleIndexAll = async (opts = {}) => {
+    await fetch(`${API}/search-index/all`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(opts),
+    })
+    setIndexState({ running: true, current: 0, total: 0, success: 0, done: false })
+    startIndexPoll()
+  }
+
   // Bulk select helpers
   const toggleSelectMode = () => {
     setSelectMode(m => !m)
@@ -549,7 +685,7 @@ export default function Library() {
           <input
             ref={searchRef}
             className="search-input"
-            placeholder="Search title, author, series… ( / )"
+            placeholder="Search title, author, series, tags, or book text… ( / )"
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
@@ -591,6 +727,13 @@ export default function Library() {
         state={enrichState}
         onStart={handleEnrichAll}
         onDismiss={() => setEnrichState({ running: false, done: false, current: 0, total: 0, success: 0 })}
+      />
+
+      {/* Search index progress banner */}
+      <SearchIndexBar
+        state={indexState}
+        onStart={handleIndexAll}
+        onDismiss={() => setIndexState({ running: false, done: false, current: 0, total: 0, success: 0 })}
       />
 
       {/* Yearly goal bar */}
@@ -715,7 +858,39 @@ export default function Library() {
             </div>
           ) : (
             <>
-              <div className="results-count">{filtered.length} book{filtered.length !== 1 ? 's' : ''}</div>
+              <div className="results-count">
+                {filtered.length} book{filtered.length !== 1 ? 's' : ''}
+                {ftPdfHits.length > 0 && (
+                  <button
+                    className="btn btn-ghost"
+                    style={{ fontSize: 11, padding: '2px 8px', marginLeft: 10 }}
+                    onClick={() => setPdfHitsOpen(o => !o)}
+                  >
+                    🔎 {ftPdfHits.length} PDF match{ftPdfHits.length !== 1 ? 'es' : ''} {pdfHitsOpen ? '▴' : '▾'}
+                  </button>
+                )}
+              </div>
+
+              {pdfHitsOpen && ftPdfHits.length > 0 && (
+                <div className="pdf-ft-results">
+                  {ftPdfHits.map(hit => (
+                    <div key={hit.id} className="pdf-ft-result">
+                      <div className="pdf-ft-result-title">📄 {hit.title}</div>
+                      {hit.matches.slice(0, 3).map((m, i) => (
+                        <button
+                          key={i}
+                          className="pdf-ft-result-snippet"
+                          onClick={() => openPdfReader({ id: hit.id, title: hit.title }, { page: m.page, matchText: m.matchText })}
+                          title={`Open page ${m.page}`}
+                        >
+                          p.{m.page} — {m.snippet}
+                        </button>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {view === 'grid' ? (
                 <div className="books-grid">
                   {filtered.map(book => (

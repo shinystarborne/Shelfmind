@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react'
 import { API, useApp } from '../App'
-import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist'
+import { GlobalWorkerOptions, getDocument, TextLayer } from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
 // Same pin note as pdfThumbnail.js: pdfjs-dist 4.x for this Electron version
@@ -15,7 +15,62 @@ const MIN_SCALE = 0.4
 const MAX_SCALE = 4
 const PAGE_GAP  = 18
 
-export default function PdfReader({ doc: pdfDoc, onClose }) {
+// ── Search highlighting on a rendered page's live TextLayer ──────────────────
+// textDivs/textContentItemsStr are index-aligned (pdf.js pushes to both together
+// per text item), so we can join the strings to search, then map an occurrence's
+// offset back to the containing span. A match straddling two adjacent spans
+// highlights only the first containing span in full — a deliberate simplification.
+function resetLayerHighlights(layer) {
+  if (!layer) return
+  const items = layer.textContentItemsStr
+  const divs  = layer.textDivs
+  for (let i = 0; i < divs.length; i++) {
+    if (divs[i].querySelector('.sm-pdf-hit')) divs[i].textContent = items[i]
+  }
+}
+
+function highlightQueryOnLayer(layer, query, currentOccIdx = -1) {
+  resetLayerHighlights(layer)
+  if (!layer || !query) return
+  const items = layer.textContentItemsStr
+  const divs  = layer.textDivs
+  const starts = []
+  let acc = 0
+  for (let i = 0; i < items.length; i++) { starts.push(acc); acc += items[i].length + 1 }
+  const pageText = items.join(' ')
+  const lower = pageText.toLowerCase()
+  const q = query.toLowerCase()
+
+  let pos = lower.indexOf(q)
+  let hitNum = 0
+  while (pos !== -1) {
+    let itemIdx = -1
+    for (let i = 0; i < items.length; i++) {
+      const s = starts[i], e = s + items[i].length
+      if (pos >= s && pos < e) { itemIdx = i; break }
+    }
+    if (itemIdx !== -1) {
+      const div = divs[itemIdx]
+      const original    = items[itemIdx]
+      const localStart  = pos - starts[itemIdx]
+      const localEnd     = Math.min(original.length, localStart + q.length)
+      const before = original.slice(0, localStart)
+      const match  = original.slice(localStart, localEnd)
+      const after  = original.slice(localEnd)
+      div.textContent = ''
+      if (before) div.appendChild(document.createTextNode(before))
+      const mark = document.createElement('span')
+      mark.className = hitNum === currentOccIdx ? 'sm-pdf-hit sm-pdf-hit-current' : 'sm-pdf-hit'
+      mark.textContent = match
+      div.appendChild(mark)
+      if (after) div.appendChild(document.createTextNode(after))
+    }
+    hitNum++
+    pos = lower.indexOf(q, pos + q.length)
+  }
+}
+
+export default function PdfReader({ doc: pdfDoc, target, onClose }) {
   const { prefs } = useApp()
   const [numPages, setNumPages] = useState(0)
   const [dims, setDims]         = useState([])     // base {w, h} per page at scale 1
@@ -32,6 +87,12 @@ export default function PdfReader({ doc: pdfDoc, onClose }) {
   const saveTimer    = useRef(null)
   const scaleRef     = useRef(null)
   scaleRef.current   = scale
+
+  // ── Search (text layer + highlighting) ──────────────────────────────────────
+  const textLayerElsRef      = useRef([])   // per-page container divs for the text layer
+  const textLayersRef        = useRef([])   // per-page live TextLayer instances (once rendered)
+  const textContentCacheRef  = useRef([])   // per-page page.getTextContent() result, cached across zoom
+  const activeQueryRef       = useRef('')   // current search query, read inside renderPage's closure
 
   const th = THEMES[prefs.theme === 'dark' ? 'dark' : 'light']
 
@@ -88,6 +149,28 @@ export default function PdfReader({ doc: pdfDoc, onClose }) {
       await task.promise
       if (renderedRef.current[idx] !== s) return   // zoom changed mid-render
       wrap.replaceChildren(canvas)
+
+      // Text layer for search highlighting — must occupy the same CSS-pixel box
+      // as the canvas above. The canvas renders at s*dpr then is CSS-sized back
+      // down to land at d.w*s CSS px, so the text layer's own viewport uses
+      // plain scale s (not s*dpr) or its spans would be double-scaled.
+      const textContainer = textLayerElsRef.current[idx]
+      if (textContainer) {
+        const textVp = page.getViewport({ scale: s })
+        textContainer.replaceChildren()
+        textContainer.style.width  = `${textVp.width}px`
+        textContainer.style.height = `${textVp.height}px`
+        let tc = textContentCacheRef.current[idx]
+        if (!tc) {
+          tc = await page.getTextContent()
+          textContentCacheRef.current[idx] = tc
+        }
+        const layer = new TextLayer({ textContentSource: tc, container: textContainer, viewport: textVp })
+        await layer.render()
+        if (renderedRef.current[idx] !== s) return   // zoom changed again mid text-layer render
+        textLayersRef.current[idx] = layer
+        if (activeQueryRef.current.length >= 2) highlightQueryOnLayer(layer, activeQueryRef.current)
+      }
     } catch (err) {
       if (err?.name !== 'RenderingCancelledException') renderedRef.current[idx] = null
     }
@@ -222,8 +305,106 @@ export default function PdfReader({ doc: pdfDoc, onClose }) {
     return () => c.removeEventListener('wheel', onWheel)
   }, [zoom])
 
+  // ── Search ("find in this PDF only") ────────────────────────────────────────
+  // pdfSearchPages: null = not fetched yet, [] = fetched but empty/unsupported.
+  const [searchOpen, setSearchOpen]         = useState(false)
+  const [searchQuery, setSearchQuery]       = useState('')
+  const [pdfSearchPages, setPdfSearchPages] = useState(null)
+  const [pdfHits, setPdfHits]               = useState([])
+  const [pdfSearchIdx, setPdfSearchIdx]     = useState(0)
+
+  useEffect(() => { activeQueryRef.current = (searchOpen ? searchQuery.trim() : '') }, [searchQuery, searchOpen])
+
+  const clearAllHighlights = useCallback(() => {
+    textLayersRef.current.forEach(layer => resetLayerHighlights(layer))
+  }, [])
+
+  const openSearch = useCallback(async () => {
+    setSearchOpen(true)
+    if (pdfSearchPages) return
+    try {
+      const data = await fetch(`${API}/pdf-docs/${pdfDoc.id}/search-text`).then(r => {
+        if (!r.ok) throw new Error('unsupported')
+        return r.json()
+      })
+      setPdfSearchPages(data.pages || [])
+    } catch {
+      setPdfSearchPages([])
+    }
+  }, [pdfDoc.id, pdfSearchPages])
+
+  const closeSearch = useCallback(() => {
+    setSearchOpen(false)
+    clearAllHighlights()
+  }, [clearAllHighlights])
+
+  // Recompute matches whenever the query or the (lazily-fetched) page text changes.
+  // Tracks which occurrence-number-within-page each hit is, so highlightQueryOnLayer
+  // (which independently re-scans the *live* rendered page text) can mark the same
+  // occurrence as "current" without the two derivations needing identical offsets.
+  useEffect(() => {
+    if (!searchOpen || !pdfSearchPages) { setPdfHits([]); return }
+    const q = searchQuery.trim().toLowerCase()
+    if (q.length < 2) { setPdfHits([]); return }
+    const hits = []
+    for (const pg of pdfSearchPages) {
+      const text = pg.text || ''
+      if (!text) continue
+      const lower = text.toLowerCase()
+      let idx = lower.indexOf(q)
+      let occ = 0
+      while (idx !== -1) {
+        hits.push({ page: pg.page, offset: idx, matchText: text.slice(idx, idx + q.length), occurrenceIndexOnPage: occ })
+        occ++
+        idx = lower.indexOf(q, idx + q.length)
+      }
+    }
+    setPdfHits(hits)
+    const preferred = target?.page ? hits.findIndex(h => h.page === target.page) : -1
+    setPdfSearchIdx(preferred >= 0 ? preferred : 0)
+  }, [searchQuery, searchOpen, pdfSearchPages, target])
+
+  const jumpToPdfMatch = useCallback(async (hit) => {
+    const idx = hit.page - 1
+    await renderPage(idx)
+    const layer = textLayersRef.current[idx]
+    if (layer) highlightQueryOnLayer(layer, searchQuery.trim(), hit.occurrenceIndexOnPage)
+    const el = pageElsRef.current[idx]?.parentElement
+    const c  = containerRef.current
+    if (el && c) c.scrollTo({ top: el.offsetTop - PAGE_GAP, behavior: 'smooth' })
+  }, [renderPage, searchQuery])
+
+  // Jump to the current hit whenever it changes (typing, prev/next, or Enter)
+  useEffect(() => {
+    if (!searchOpen || pdfHits.length === 0) return
+    const hit = pdfHits[pdfSearchIdx]
+    if (hit) jumpToPdfMatch(hit)
+  }, [pdfSearchIdx, pdfHits, searchOpen])   // eslint-disable-line react-hooks/exhaustive-deps
+
+  const searchNext = useCallback(() => {
+    setPdfSearchIdx(i => pdfHits.length ? (i + 1) % pdfHits.length : 0)
+  }, [pdfHits.length])
+
+  const searchPrev = useCallback(() => {
+    setPdfSearchIdx(i => pdfHits.length ? (i - 1 + pdfHits.length) % pdfHits.length : 0)
+  }, [pdfHits.length])
+
+  const openSearchRef  = useRef(openSearch)
+  openSearchRef.current  = openSearch
+  const closeSearchRef = useRef(closeSearch)
+  closeSearchRef.current = closeSearch
+
+  // Jump-on-open target from the Library's full-text search results
+  useEffect(() => {
+    if (!target?.matchText || !scale || dims.length === 0) return
+    setSearchQuery(target.matchText)
+    openSearchRef.current()
+  }, [target, scale, dims.length])   // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     const onKey = (e) => {
+      if (searchOpen && e.key === 'Escape') { closeSearchRef.current(); return }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') { e.preventDefault(); openSearchRef.current(); return }
       if (e.key === 'Escape') closeRef.current()
       else if (e.key === '+' || e.key === '=') zoom(1.15)
       else if (e.key === '-')                  zoom(1 / 1.15)
@@ -231,7 +412,7 @@ export default function PdfReader({ doc: pdfDoc, onClose }) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [zoom, fitWidth])
+  }, [zoom, fitWidth, searchOpen])
 
   const close = useCallback(() => {
     clearTimeout(saveTimer.current)
@@ -277,12 +458,42 @@ export default function PdfReader({ doc: pdfDoc, onClose }) {
           {numPages > 0 && (
             <span className="pdf-page-indicator">{curPage} / {numPages}</span>
           )}
+          <button
+            className={`reader-icon-btn ${searchOpen ? 'active' : ''}`}
+            onClick={() => (searchOpen ? closeSearch() : openSearch())}
+            title="Search in this PDF (Ctrl+F)"
+          >🔎</button>
           <button className="reader-icon-btn" onClick={() => zoom(1 / 1.15)} title="Zoom out (−)">−</button>
           <span className="pdf-zoom-pct">{scale ? `${Math.round(scale * 100)}%` : '…'}</span>
           <button className="reader-icon-btn" onClick={() => zoom(1.15)} title="Zoom in (+)">+</button>
           <button className="reader-icon-btn pdf-fit-btn" onClick={fitWidth} title="Fit width (0)">⇔</button>
         </div>
       </div>
+
+      {/* In-PDF search bar */}
+      {searchOpen && (
+        <div className="reader-searchbar">
+          <input
+            autoFocus
+            className="reader-search-input"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder={pdfSearchPages === null ? 'Loading PDF text…' : 'Search this PDF…'}
+            disabled={pdfSearchPages === null}
+            onKeyDown={e => {
+              e.stopPropagation()
+              if (e.key === 'Escape') { e.preventDefault(); closeSearch() }
+              else if (e.key === 'Enter') { e.preventDefault(); if (e.shiftKey) searchPrev(); else searchNext() }
+            }}
+          />
+          <span className="reader-search-count">
+            {searchQuery.trim().length < 2 ? '' : pdfHits.length === 0 ? '0 / 0' : `${pdfSearchIdx + 1} / ${pdfHits.length}`}
+          </span>
+          <button className="reader-icon-btn" onClick={searchPrev} disabled={pdfHits.length === 0} title="Previous match">▲</button>
+          <button className="reader-icon-btn" onClick={searchNext} disabled={pdfHits.length === 0} title="Next match">▼</button>
+          <button className="reader-icon-btn" onClick={closeSearch} title="Close search">✕</button>
+        </div>
+      )}
 
       <div className="pdf-scroll" ref={containerRef}>
         <div className="pdf-pages">
@@ -296,6 +507,10 @@ export default function PdfReader({ doc: pdfDoc, onClose }) {
                 className="pdf-page-canvas"
                 data-idx={i}
                 ref={el => { pageElsRef.current[i] = el }}
+              />
+              <div
+                className="pdf-page-text textLayer"
+                ref={el => { textLayerElsRef.current[i] = el }}
               />
               <div className="pdf-page-num">{i + 1}</div>
             </div>

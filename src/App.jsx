@@ -91,7 +91,7 @@ export default function App() {
   const openReader  = useCallback((book, target = null) => setReaderBook({ book, target }), [])
   const closeReader = useCallback(() => setReaderBook(null), [])
   const [pdfReaderDoc, setPdfReaderDoc] = useState(null)
-  const openPdfReader  = useCallback(doc => setPdfReaderDoc(doc), [])
+  const openPdfReader  = useCallback((doc, target = null) => setPdfReaderDoc({ doc, target }), [])
   const closePdfReader = useCallback(() => setPdfReaderDoc(null), [])
 
   const loadLists = useCallback(() => {
@@ -311,7 +311,7 @@ export default function App() {
       </div>
 
       {readerBook && <Reader book={readerBook.book} target={readerBook.target} onClose={closeReader} />}
-      {pdfReaderDoc && <PdfReader doc={pdfReaderDoc} onClose={closePdfReader} />}
+      {pdfReaderDoc && <PdfReader doc={pdfReaderDoc.doc} target={pdfReaderDoc.target} onClose={closePdfReader} />}
 
       <Toasts toasts={toasts} onDismiss={dismissToast} />
     </AppCtx.Provider>

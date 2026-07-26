@@ -12,6 +12,7 @@ const fs   = require('fs')
 const path = require('path')
 const os   = require('os')
 const crypto = require('crypto')
+const { snippetAround } = require('./textExtract')
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 // ISO 639-2 (three-letter, common in epub metadata) → ISO 639-1
@@ -92,8 +93,12 @@ class Store {
   constructor(dataDir) {
     this.dataDir  = dataDir
     this.coversDir = path.join(dataDir, 'covers')
+    this.searchTextDir = path.join(dataDir, 'searchtext')
     fs.mkdirSync(this.dataDir,   { recursive: true })
     fs.mkdirSync(this.coversDir, { recursive: true })
+    fs.mkdirSync(this.searchTextDir, { recursive: true })
+    this._searchTextCache = new Map()   // id (or "pdf-"+id) -> {mtime, chapters|pages}
+    this._searchCorpusLoaded = false
 
     this._booksFile   = path.join(dataDir, 'books.json')
     this._statesFile  = path.join(dataDir, 'states.json')
@@ -287,6 +292,141 @@ class Store {
     writeJson(this._statesFile, this.states)
   }
 
+  // ── Search text cache (per-book/per-pdf extracted plain text) ────────────────
+  // PDFs share the "pdf-" id prefix convention already used for covers.
+  searchTextPath(id) { return path.join(this.searchTextDir, `${id}.json`) }
+
+  saveSearchText(id, data) {
+    writeJson(this.searchTextPath(id), data)
+    this._searchTextCache.set(id, data)
+  }
+
+  getSearchText(id) {
+    if (this._searchTextCache.has(id)) return this._searchTextCache.get(id)
+    const data = readJson(this.searchTextPath(id), null)
+    if (data) this._searchTextCache.set(id, data)
+    return data
+  }
+
+  savePdfSearchText(docId, data) { this.saveSearchText(`pdf-${docId}`, data) }
+  getPdfSearchText(docId)        { return this.getSearchText(`pdf-${docId}`) }
+
+  // Lazily warms the full in-memory text corpus from disk, once. Not done in
+  // the constructor (unlike books/states/highlights) — a full library's worth
+  // of plain text can be tens-to-hundreds of MB, not worth paying at every
+  // cold start for users who never search. The indexing job also populates
+  // the same cache incrementally as it runs, so this is usually a no-op by
+  // the time it's first called.
+  ensureSearchCorpusLoaded() {
+    if (this._searchCorpusLoaded) return
+    let files = []
+    try { files = fs.readdirSync(this.searchTextDir) } catch { files = [] }
+    for (const name of files) {
+      if (!name.endsWith('.json')) continue
+      const id = name.slice(0, -5)
+      if (this._searchTextCache.has(id)) continue
+      const data = readJson(path.join(this.searchTextDir, name), null)
+      if (data) this._searchTextCache.set(id, data)
+    }
+    this._searchCorpusLoaded = true
+  }
+
+  getUnindexedBooks(force = false) {
+    if (force) return this.books.filter(b => !b.removed)
+    return this.books.filter(b => !b.removed && !b.text_indexed)
+  }
+
+  getUnindexedPdfDocs(force = false) {
+    const list = this.pdfDocs.filter(d => fs.existsSync(d.path))
+    if (force) return list
+    return list.filter(d => !d.text_indexed)
+  }
+
+  markTextIndexed(kind, id, ok) {
+    if (kind === 'book') {
+      const b = this._byId.get(id)
+      if (b) { b.text_indexed = ok ? true : 'failed'; writeJson(this._booksFile, this.books) }
+    } else {
+      const d = this.pdfDocs.find(d => d.id === id)
+      if (d) { d.text_indexed = ok ? true : 'failed'; writeJson(this._pdfDocsFile, this.pdfDocs) }
+    }
+  }
+
+  resetTextIndex(onlyFailed = false) {
+    let count = 0
+    for (const b of this.books) {
+      if (b.removed) continue
+      if (!onlyFailed || b.text_indexed === 'failed') { b.text_indexed = false; count++ }
+    }
+    for (const d of this.pdfDocs) {
+      if (!onlyFailed || d.text_indexed === 'failed') { d.text_indexed = false; count++ }
+    }
+    writeJson(this._booksFile, this.books)
+    writeJson(this._pdfDocsFile, this.pdfDocs)
+    return count
+  }
+
+  // Plain case-insensitive substring scan over the cached text corpus.
+  // Deliberately simple — no inverted index, no new dependency — appropriate
+  // for a personal library once the text is already extracted.
+  searchAll(query, limit = 50) {
+    this.ensureSearchCorpusLoaded()
+    const q = query.toLowerCase()
+    const results = []
+
+    for (const [id, data] of this._searchTextCache) {
+      const isPdf   = id.startsWith('pdf-')
+      const realId  = isPdf ? id.slice(4) : id
+      const items   = isPdf ? data.pages : data.chapters
+      if (!items) continue
+
+      let book = null, pdfDoc = null
+      if (isPdf) {
+        pdfDoc = this.pdfDocs.find(d => d.id === realId)
+        if (!pdfDoc) continue
+      } else {
+        book = this._byId.get(realId)
+        if (!book || book.removed) continue
+      }
+
+      const matches = []
+      let matchCount = 0
+      for (const it of items) {
+        const text = it.text || ''
+        if (!text) continue
+        const lower = text.toLowerCase()
+        let idx = lower.indexOf(q)
+        let perItem = 0
+        while (idx !== -1 && perItem < 3) {
+          matchCount++
+          perItem++
+          if (matches.length < 5) {
+            matches.push({
+              [isPdf ? 'page' : 'spine']: it[isPdf ? 'page' : 'spine'],
+              offset:    idx,
+              matchText: text.slice(idx, idx + q.length),
+              snippet:   snippetAround(text, idx, q.length),
+            })
+          }
+          idx = lower.indexOf(q, idx + q.length)
+        }
+      }
+      if (matchCount === 0) continue
+
+      results.push({
+        kind:   isPdf ? 'pdf' : 'book',
+        id:     realId,
+        title:  isPdf ? pdfDoc.title : book.title,
+        author: isPdf ? '' : (book.author_canonical || book.author || ''),
+        matchCount,
+        matches,
+      })
+    }
+
+    results.sort((a, b) => b.matchCount - a.matchCount)
+    return results.slice(0, limit)
+  }
+
   // ── Highlights ──────────────────────────────────────────────────────────────
   // { id, spine, start, end, text, color, created_at } — start/end are character
   // offsets into the chapter's textContent; text is kept for re-anchoring + quotes.
@@ -300,10 +440,22 @@ class Store {
       spine, start, end,
       text:  String(text || '').trim(),
       color: color || 'yellow',
+      note:  '',
       created_at: Math.floor(Date.now() / 1000),
     }
     if (!this.highlights[bookId]) this.highlights[bookId] = []
     this.highlights[bookId].push(h)
+    writeJson(this._highlightsFile, this.highlights)
+    return h
+  }
+
+  updateHighlight(bookId, hid, { note, color } = {}) {
+    const arr = this.highlights[bookId]
+    if (!arr) return null
+    const h = arr.find(h => h.id === hid)
+    if (!h) return null
+    if (note  !== undefined) h.note  = String(note || '').trim()
+    if (color !== undefined) h.color = color
     writeJson(this._highlightsFile, this.highlights)
     return h
   }

@@ -113,6 +113,7 @@ export default function BookCard({ book, selected, onClick, selectable, checked,
               <div className="book-progress-fill" style={{ width: `${book.reading_position.percent}%` }} />
             </div>
           )}
+          {book._ftSnippet && <div className="book-ft-snippet" title="Found in book text">🔎 {book._ftSnippet}</div>}
         </div>
       </div>
     </div>
@@ -151,6 +152,7 @@ export function BookListItem({ book, selected, onClick, selectable, checked, onC
             {book.series_name}{book.series_num ? ` #${book.series_num}` : ''}
           </div>
         )}
+        {book._ftSnippet && <div className="book-ft-snippet" title="Found in book text">🔎 {book._ftSnippet}</div>}
       </div>
       <div className="book-list-meta">
         {book.rating && <span className="star-mini">{'★'.repeat(book.rating)}</span>}

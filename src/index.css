@@ -2044,6 +2044,15 @@ h3 { font-size: 18px; }
   border-radius: 99px;
   background: var(--status-reading);
 }
+.book-ft-snippet {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 @media (max-width: 700px) {
   .reader-arrow { display: none; }
@@ -2086,6 +2095,71 @@ h3 { font-size: 18px; }
   white-space: nowrap;
 }
 .reader-hl-copy:hover { background: color-mix(in srgb, var(--r-fg, #fff) 12%, transparent); }
+
+.reader-note-editor {
+  position: fixed;
+  z-index: 450;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 240px;
+  padding: 10px;
+  border-radius: var(--radius-md);
+  background: var(--r-chrome, rgba(30, 26, 22, 0.95));
+  border: 1px solid var(--r-border, #444);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.3);
+  animation: reader-panel-in 0.12s ease;
+}
+.reader-note-textarea {
+  width: 100%;
+  min-height: 60px;
+  resize: vertical;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--r-fg, #ddd);
+  background: color-mix(in srgb, var(--r-fg, #fff) 8%, transparent);
+  border: 1px solid var(--r-border, #444);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+.reader-note-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.reader-searchbar {
+  position: fixed;
+  z-index: 450;
+  top: 60px;
+  right: 24px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 99px;
+  background: var(--r-chrome, rgba(30, 26, 22, 0.95));
+  border: 1px solid var(--r-border, #444);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.3);
+  animation: reader-panel-in 0.12s ease;
+}
+.reader-search-input {
+  width: 180px;
+  font-size: 13px;
+  color: var(--r-fg, #ddd);
+  background: color-mix(in srgb, var(--r-fg, #fff) 8%, transparent);
+  border: 1px solid var(--r-border, #444);
+  border-radius: 99px;
+  padding: 4px 12px;
+}
+.reader-search-count {
+  font-size: 11px;
+  color: var(--r-soft, #999);
+  white-space: nowrap;
+  min-width: 44px;
+  text-align: center;
+}
 
 /* ── Quotes view ──────────────────────────────────────────────────────────── */
 .quotes-body {
@@ -2161,6 +2235,30 @@ h3 { font-size: 18px; }
 }
 .quote-text::before { content: '“'; color: var(--text-muted); margin-right: 1px; }
 .quote-text::after  { content: '”'; color: var(--text-muted); margin-left: 1px; }
+.quote-note {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--cream-dark);
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+  white-space: pre-wrap;
+}
+.quote-note:hover { color: var(--text); }
+.quote-note-edit { margin-top: 8px; }
+.quote-note-textarea {
+  width: 100%;
+  min-height: 54px;
+  resize: vertical;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--cream-dark);
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  padding: 6px 10px;
+}
 .quote-meta {
   display: flex;
   align-items: center;
@@ -2187,6 +2285,34 @@ h3 { font-size: 18px; }
 .quote-actions button:hover { background: var(--cream-dark); }
 
 [data-theme="dark"] .quote-card { background: var(--cream-dark); }
+
+.pdf-ft-results {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  background: var(--cream-dark);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+}
+.pdf-ft-result-title {
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.pdf-ft-result-snippet {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 3px 0;
+}
+.pdf-ft-result-snippet:hover { color: var(--text); }
 
 /* ── In-app PDF viewer ────────────────────────────────────────────────────── */
 .pdf-reader .reader-topbar {
@@ -2243,6 +2369,37 @@ h3 { font-size: 18px; }
   overflow: hidden;
 }
 .pdf-page-canvas canvas { display: block; }
+
+/* Text layer — hand-picked subset of pdf.js's own pdf_viewer.css, just enough
+   for positioning + text selection + our own search-highlight spans. Not the
+   full stylesheet, which also carries unrelated annotation-editor CSS. */
+.pdf-page-text.textLayer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  line-height: 1;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: transparent;
+  z-index: 2;
+}
+.textLayer span {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+.textLayer ::selection { background: rgba(115, 175, 240, 0.4); }
+.sm-pdf-hit {
+  background-color: rgba(255, 200, 0, 0.45);
+  border-radius: 1px;
+}
+.sm-pdf-hit-current {
+  background-color: rgba(255, 140, 0, 0.75);
+}
+
 .pdf-page-num {
   position: absolute;
   bottom: -16px;

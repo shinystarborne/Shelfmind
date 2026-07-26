@@ -7,9 +7,11 @@ const { getStore }   = require('./db')
 const { scan, parseEpub, getEpubImages } = require('./scanner')
 const { enrichAll, enrichOne } = require('./enricher')
 const { writeEpubMeta } = require('./epubWriter')
+const { indexAll, extractBookText, extractPdfText } = require('./searchIndexer')
 
 let scanState   = { running: false, current: 0, total: 0, added: 0, done: false, error: null }
 let enrichState = { running: false, current: 0, total: 0, success: 0, done: false }
+let indexState  = { running: false, current: 0, total: 0, success: 0, done: false }
 
 function getRemovedDir(store) {
   const libraryPath = store.getPref('library_path') || 'E:\\Books'
@@ -146,6 +148,13 @@ function startServer(port = 3001) {
         return res.status(400).json({ error: 'spine, start, end, text required' })
       }
       res.json(store.addHighlight(req.params.id, { spine, start, end, text, color }))
+    })
+
+    app.put('/api/books/:id/highlights/:hid', (req, res) => {
+      const { note, color } = req.body || {}
+      const h = store.updateHighlight(req.params.id, req.params.hid, { note, color })
+      if (!h) return res.status(404).json({ error: 'Not found' })
+      res.json(h)
     })
 
     app.delete('/api/books/:id/highlights/:hid', (req, res) => {
@@ -414,6 +423,67 @@ function startServer(port = 3001) {
     })
 
     app.get('/api/enrich/status', (_, res) => res.json(enrichState))
+
+    // ── Search indexing ──────────────────────────────────────────────────────
+
+    app.post('/api/search-index/all', (req, res) => {
+      if (indexState.running) return res.json({ ok: false, message: 'Already indexing' })
+      const force       = req.body?.force === true
+      const resetFailed = req.body?.reset_failed === true
+
+      if (force)            store.resetTextIndex(false)
+      else if (resetFailed) store.resetTextIndex(true)
+
+      indexState = { running: true, current: 0, total: 0, success: 0, done: false }
+      res.json({ ok: true })
+
+      indexAll(store, p => { Object.assign(indexState, p) }, force)
+        .then(r  => { indexState = { ...r, running: false, done: true } })
+        .catch(() => { indexState.running = false; indexState.done = true })
+    })
+
+    app.get('/api/search-index/status', (_, res) => res.json(indexState))
+
+    app.get('/api/books/:id/search-text', async (req, res) => {
+      const book = store.getBook(req.params.id)
+      if (!book) return res.status(404).json({ error: 'Not found' })
+      let data = store.getSearchText(book.id)
+      if (!data) {
+        try {
+          const extracted = await extractBookText(book)
+          if (!extracted) return res.status(400).json({ error: `Reading ${book.format} files is not supported` })
+          data = { mtime: Date.now(), ...extracted }
+          store.saveSearchText(book.id, data)
+          store.markTextIndexed('book', book.id, true)
+        } catch (err) {
+          return res.status(500).json({ error: err.message })
+        }
+      }
+      res.json({ chapters: data.chapters })
+    })
+
+    app.get('/api/pdf-docs/:id/search-text', async (req, res) => {
+      const doc = store.getPdfDoc(req.params.id)
+      if (!doc) return res.status(404).json({ error: 'Not found' })
+      let data = store.getPdfSearchText(doc.id)
+      if (!data) {
+        try {
+          const extracted = await extractPdfText(doc.path)
+          data = { mtime: Date.now(), ...extracted }
+          store.savePdfSearchText(doc.id, data)
+          store.markTextIndexed('pdf', doc.id, true)
+        } catch (err) {
+          return res.status(500).json({ error: err.message })
+        }
+      }
+      res.json({ pages: data.pages })
+    })
+
+    app.get('/api/search', (req, res) => {
+      const q = (req.query.q || '').trim()
+      if (q.length < 2) return res.json({ query: q, results: [] })
+      res.json({ query: q, results: store.searchAll(q) })
+    })
 
     // ── Insights ───────────────────────────────────────────────────────────────
 

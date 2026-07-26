@@ -72,18 +72,10 @@ function rangeToOffsets(root, range) {
   return { start, end }
 }
 
-// Wrap [start, end) of the chapter text in <mark> elements. Re-anchors by
-// searching for the stored text if the offsets no longer line up (book updated).
-function applyHighlight(doc, h) {
-  const root = doc.body
-  const full = root.textContent
-  let { start, end } = h
-  if (full.slice(start, end) !== h.text) {
-    const idx = full.indexOf(h.text)
-    if (idx < 0) return false
-    start = idx
-    end   = idx + h.text.length
-  }
+// Wraps [start, end) of root's textContent in <mark class="{className}"> elements,
+// splitting across text nodes as needed. Returns the created mark(s) (usually one,
+// more if the range spans multiple nodes).
+function wrapRange(doc, root, start, end, className) {
   const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT)
   const targets = []
   let acc = 0
@@ -96,22 +88,22 @@ function applyHighlight(doc, h) {
     acc += len
     if (acc >= end) break
   }
+  const marks = []
   for (const t of targets) {
     let node = t.n
     if (t.to < node.nodeValue.length) node.splitText(t.to)
     if (t.from > 0) node = node.splitText(t.from)
     const mark = doc.createElement('mark')
-    mark.className = 'sm-hl'
-    mark.dataset.hid = h.id
-    mark.style.setProperty('background-color', HL_COLORS[h.color] || HL_COLORS.yellow, 'important')
+    mark.className = className
     node.parentNode.insertBefore(mark, node)
     mark.appendChild(node)
+    marks.push(mark)
   }
-  return targets.length > 0
+  return marks
 }
 
-function removeHighlightMarks(doc, hid) {
-  doc.querySelectorAll(`mark.sm-hl[data-hid="${hid}"]`).forEach(mark => {
+function unwrapMarks(doc, selector) {
+  doc.querySelectorAll(selector).forEach(mark => {
     const parent = mark.parentNode
     while (mark.firstChild) parent.insertBefore(mark.firstChild, mark)
     parent.removeChild(mark)
@@ -119,13 +111,71 @@ function removeHighlightMarks(doc, hid) {
   })
 }
 
-// Books that hardcode pt/px font sizes would ignore the reader's base size —
-// rewrite absolute sizes to rem so everything scales with the user setting.
+// Wrap [start, end) of the chapter text in <mark> elements. Re-anchors by
+// searching for the stored text if the offsets no longer line up (book updated).
+function applyHighlight(doc, h) {
+  const root = doc.body
+  const full = root.textContent
+  let { start, end } = h
+  if (full.slice(start, end) !== h.text) {
+    const idx = full.indexOf(h.text)
+    if (idx < 0) return false
+    start = idx
+    end   = idx + h.text.length
+  }
+  const marks = wrapRange(doc, root, start, end, 'sm-hl')
+  for (const mark of marks) {
+    mark.dataset.hid = h.id
+    mark.style.setProperty('background-color', HL_COLORS[h.color] || HL_COLORS.yellow, 'important')
+    if (h.note) mark.title = h.note
+  }
+  return marks.length > 0
+}
+
+function removeHighlightMarks(doc, hid) {
+  unwrapMarks(doc, `mark.sm-hl[data-hid="${hid}"]`)
+}
+
+// Same re-anchoring strategy as applyHighlight (trust text over a numeric
+// offset — server-side and browser-side HTML-to-text derivations don't
+// necessarily agree on offsets), but for an ephemeral, non-persisted match
+// (search results, not saved highlights). Returns the flashed mark's bounding
+// rect for pagination, or null if the text genuinely can't be found anymore.
+function locateAndFlash(idoc, offset, matchText) {
+  if (!matchText) return null
+  const root = idoc.body
+  const full = root.textContent
+  let start = offset
+  if (full.slice(offset, offset + matchText.length).toLowerCase() !== matchText.toLowerCase()) {
+    const idx = full.toLowerCase().indexOf(matchText.toLowerCase())
+    if (idx < 0) return null
+    start = idx
+  }
+  const end = start + matchText.length
+  unwrapMarks(idoc, 'mark.sm-search-hit')
+  const marks = wrapRange(idoc, root, start, end, 'sm-search-hit')
+  if (marks.length === 0) return null
+  setTimeout(() => { try { unwrapMarks(idoc, 'mark.sm-search-hit') } catch { /* iframe gone */ } }, 2500)
+  return marks[0].getBoundingClientRect()
+}
+
+// CSS absolute-size keywords, as a ratio of "medium" (the spec-defined scale
+// browsers use — medium == 1x, large == 1.2x, etc).
+const KEYWORD_FONT_RATIOS = {
+  'xx-small': 3 / 5, 'x-small': 3 / 4, small: 8 / 9, medium: 1,
+  large: 6 / 5, 'x-large': 3 / 2, 'xx-large': 2, 'xxx-large': 3,
+}
+
+// Books that hardcode pt/px font sizes (or CSS absolute-size keywords like
+// "large") would ignore the reader's base size — rewrite them to rem so
+// everything scales with the user setting.
 function normalizeFontSizes(idoc) {
   const toRem = (val) => {
-    const m = /^([\d.]+)(px|pt)$/.exec((val || '').trim())
-    if (!m) return null
-    return (parseFloat(m[1]) / (m[2] === 'pt' ? 12 : 16)).toFixed(3) + 'rem'
+    const v = (val || '').trim().toLowerCase()
+    const m = /^([\d.]+)(px|pt)$/.exec(v)
+    if (m) return (parseFloat(m[1]) / (m[2] === 'pt' ? 12 : 16)).toFixed(3) + 'rem'
+    if (v in KEYWORD_FONT_RATIOS) return KEYWORD_FONT_RATIOS[v].toFixed(3) + 'rem'
+    return null
   }
   for (const sheet of idoc.styleSheets) {
     let rules
@@ -161,6 +211,17 @@ export default function Reader({ book, target, onClose }) {
   // Floating toolbars: over a fresh selection / over an existing highlight
   const [selBar, setSelBar]   = useState(null)   // { x, y, sel: {start, end, text} }
   const [markBar, setMarkBar] = useState(null)   // { x, y, hid }
+  const [noteEditor, setNoteEditor] = useState(null)   // { hid, x, y, text }
+  // In-book search — declared here (not down by the rest of the search logic)
+  // because handleKey's useCallback deps reference searchOpen below, and a
+  // dependency array is evaluated synchronously during render: referencing a
+  // useState binding before its own declaration statement has run throws a
+  // TDZ ReferenceError, unlike refs dereferenced lazily inside a callback body.
+  const [searchOpen, setSearchOpen]         = useState(false)
+  const [searchQuery, setSearchQuery]       = useState('')
+  const [searchChapters, setSearchChapters] = useState(null)
+  const [searchHits, setSearchHits]         = useState([])
+  const [searchIdx, setSearchIdx]           = useState(0)
   const hlRef = useRef([])                       // this book's highlights
 
   const iframeRef  = useRef(null)
@@ -264,6 +325,7 @@ export default function Reader({ book, target, onClose }) {
     setLoading(true)
     setSelBar(null)
     setMarkBar(null)
+    setNoteEditor(null)
     const chapterPath = st.spine[spineIdx].href
     try {
       const raw = await fetch(resURL(chapterPath)).then(r => {
@@ -327,8 +389,19 @@ export default function Reader({ book, target, onClose }) {
         }
         ${fontRule}
         body * { color: ${th.fg} !important; }
-        body *:not(.sm-hl) { background-color: transparent !important; }
+        body *:not(.sm-hl):not(.sm-search-hit) { background-color: transparent !important; }
         mark.sm-hl { color: inherit !important; padding: 0 1px; border-radius: 2px; cursor: pointer; }
+        mark.sm-search-hit {
+          color: inherit !important;
+          padding: 0;
+          border-radius: 2px;
+          animation: sm-search-flash 2.5s ease-out;
+        }
+        @keyframes sm-search-flash {
+          0%   { background-color: rgba(255, 140, 0, 0.85); }
+          70%  { background-color: rgba(255, 140, 0, 0.55); }
+          100% { background-color: rgba(255, 140, 0, 0); }
+        }
         body p, body li, body blockquote { line-height: ${s.lineHeight} !important; }
         h1, h2, h3, h4, h5, h6 { break-after: avoid; }
         img, svg, video { max-width: 100% !important; max-height: ${geo.H - 8}px !important; height: auto; object-fit: contain; break-inside: avoid; }
@@ -378,6 +451,11 @@ export default function Reader({ book, target, onClose }) {
           else if (target.highlight) {
             const el = idoc.querySelector(`mark.sm-hl[data-hid="${target.highlight}"]`)
             if (el) page = Math.max(0, Math.floor(el.getBoundingClientRect().left / step()))
+          }
+          else if (target.textOffset != null) {
+            const rect = locateAndFlash(idoc, target.textOffset, target.matchText || '')
+            if (rect) page = Math.max(0, Math.floor(rect.left / step()))
+            else toast("Couldn't locate this match exactly", 'error')
           }
           else if (target.frac)        page = Math.round(target.frac * (pages - 1))
           setPosition(spineIdx, page, pages, false)
@@ -474,6 +552,7 @@ export default function Reader({ book, target, onClose }) {
     if (!st) return
     setSelBar(null)
     setMarkBar(null)
+    setNoteEditor(null)
     const { spine, page, pages } = posRef.current
     if (dir > 0) {
       if (page < pages - 1) setPosition(spine, page + 1, pages)
@@ -488,14 +567,16 @@ export default function Reader({ book, target, onClose }) {
 
   // ── Keyboard ────────────────────────────────────────────────────────────────
   const handleKey = useCallback((e) => {
-    if (['ArrowRight', 'ArrowDown', 'PageDown', ' '].includes(e.key)) { e.preventDefault(); turnRef.current(1) }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') { e.preventDefault(); openSearchRef.current() }
+    else if (['ArrowRight', 'ArrowDown', 'PageDown', ' '].includes(e.key)) { e.preventDefault(); turnRef.current(1) }
     else if (['ArrowLeft', 'ArrowUp', 'PageUp'].includes(e.key))      { e.preventDefault(); turnRef.current(-1) }
     else if (e.key === 'Escape') {
-      if (settingsOpen)      setSettingsOpen(false)
+      if (searchOpen)        closeSearchRef.current()
+      else if (settingsOpen) setSettingsOpen(false)
       else if (tocOpen)      setTocOpen(false)
       else                   closeRef.current()
     }
-  }, [settingsOpen, tocOpen])
+  }, [settingsOpen, tocOpen, searchOpen])
   const keyHandlerRef = useRef(handleKey)
   keyHandlerRef.current = handleKey
 
@@ -542,9 +623,13 @@ export default function Reader({ book, target, onClose }) {
         structRef.current = st
         hlRef.current = highlights
         setStructure(st)
-        // A jump target (from the Quotes view) wins over the saved position
+        // A jump target (from the Quotes view, or a search result) wins over the saved position
         if (target?.hid != null && target.spine < st.spine.length) {
           loadChapterRef.current(target.spine, { highlight: target.hid })
+          return
+        }
+        if (target?.textOffset != null && target.spine < st.spine.length) {
+          loadChapterRef.current(target.spine, { textOffset: target.textOffset, matchText: target.matchText })
           return
         }
         const pos = fresh?.reading_position || book.reading_position
@@ -632,11 +717,104 @@ export default function Reader({ book, target, onClose }) {
     }
   }, [book.id, toast])
 
+  const saveNote = useCallback(async (hid, note) => {
+    try {
+      const h = await fetch(`${API}/books/${book.id}/highlights/${hid}`, {
+        method:  'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ note }),
+      }).then(r => { if (!r.ok) throw new Error('save failed'); return r.json() })
+      hlRef.current = hlRef.current.map(x => x.id === hid ? h : x)
+      const mark = iframeRef.current?.contentDocument?.querySelector(`mark.sm-hl[data-hid="${hid}"]`)
+      if (mark) mark.title = h.note || ''
+      toast('Note saved')
+    } catch {
+      toast('Could not save note', 'error')
+    }
+  }, [book.id, toast])
+
   const copyHighlight = useCallback((hid) => {
     const h = hlRef.current.find(x => x.id === hid)
     if (h) { navigator.clipboard.writeText(h.text.replace(/\s+/g, ' ').trim()); toast('Quote copied') }
     setMarkBar(null)
   }, [toast])
+
+  // ── In-book search ("find in this book only") ───────────────────────────────
+  // searchChapters: null = not fetched yet, [] = fetched but empty/unsupported.
+  const openSearch = useCallback(async () => {
+    setSearchOpen(true)
+    setSelBar(null); setMarkBar(null); setNoteEditor(null)
+    if (searchChapters) return
+    try {
+      const data = await fetch(`${API}/books/${book.id}/search-text`).then(r => {
+        if (!r.ok) throw new Error('unsupported')
+        return r.json()
+      })
+      setSearchChapters(data.chapters || [])
+    } catch {
+      setSearchChapters([])
+    }
+  }, [book.id, searchChapters])
+
+  const closeSearch = useCallback(() => {
+    setSearchOpen(false)
+    const idoc = iframeRef.current?.contentDocument
+    if (idoc) unwrapMarks(idoc, 'mark.sm-search-hit')
+  }, [])
+
+  const openSearchRef  = useRef(openSearch)
+  openSearchRef.current  = openSearch
+  const closeSearchRef = useRef(closeSearch)
+  closeSearchRef.current = closeSearch
+
+  // Recompute matches whenever the query or the (lazily-fetched) chapter text changes
+  useEffect(() => {
+    if (!searchOpen || !searchChapters) { setSearchHits([]); return }
+    const q = searchQuery.trim().toLowerCase()
+    if (q.length < 2) { setSearchHits([]); return }
+    const hits = []
+    for (const ch of searchChapters) {
+      const text = ch.text || ''
+      if (!text) continue
+      const lower = text.toLowerCase()
+      let idx = lower.indexOf(q)
+      while (idx !== -1) {
+        hits.push({ spine: ch.spine, offset: idx, matchText: text.slice(idx, idx + q.length) })
+        idx = lower.indexOf(q, idx + q.length)
+      }
+    }
+    setSearchHits(hits)
+    setSearchIdx(0)
+  }, [searchQuery, searchOpen, searchChapters])
+
+  const jumpToTextOffset = useCallback((spineIdx, offset, matchText) => {
+    if (spineIdx !== posRef.current.spine) {
+      loadChapterRef.current(spineIdx, { textOffset: offset, matchText })
+      return
+    }
+    const idoc = iframeRef.current?.contentDocument
+    if (!idoc) return
+    const rect = locateAndFlash(idoc, offset, matchText)
+    if (!rect) { toast("Couldn't locate this match exactly", 'error'); return }
+    const geo = geometry()
+    const page = Math.max(0, Math.floor(rect.left / (geo?.step || 1)))
+    setPosition(posRef.current.spine, page, posRef.current.pages, true)
+  }, [geometry, setPosition, toast])
+
+  // Jump to the current hit whenever it changes (typing, prev/next, or Enter)
+  useEffect(() => {
+    if (!searchOpen || searchHits.length === 0) return
+    const hit = searchHits[searchIdx]
+    if (hit) jumpToTextOffset(hit.spine, hit.offset, hit.matchText)
+  }, [searchIdx, searchHits, searchOpen])   // eslint-disable-line react-hooks/exhaustive-deps
+
+  const searchNext = useCallback(() => {
+    setSearchIdx(i => searchHits.length ? (i + 1) % searchHits.length : 0)
+  }, [searchHits.length])
+
+  const searchPrev = useCallback(() => {
+    setSearchIdx(i => searchHits.length ? (i - 1 + searchHits.length) % searchHits.length : 0)
+  }, [searchHits.length])
 
   // ── Seek via progress slider ────────────────────────────────────────────────
   const seekTo = useCallback((pct) => {
@@ -725,6 +903,11 @@ export default function Reader({ book, target, onClose }) {
         </div>
         <div className="reader-topbar-actions">
           <button
+            className={`reader-icon-btn ${searchOpen ? 'active' : ''}`}
+            onClick={() => (searchOpen ? closeSearch() : openSearch())}
+            title="Search in this book (Ctrl+F)"
+          >🔎</button>
+          <button
             className={`reader-icon-btn ${tocOpen ? 'active' : ''}`}
             onClick={() => { setTocOpen(o => !o); setSettingsOpen(false) }}
             title="Table of contents"
@@ -736,6 +919,31 @@ export default function Reader({ book, target, onClose }) {
           >Aa</button>
         </div>
       </div>
+
+      {/* In-book search bar */}
+      {searchOpen && (
+        <div className="reader-searchbar">
+          <input
+            autoFocus
+            className="reader-search-input"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder={searchChapters === null ? 'Loading book text…' : 'Search this book…'}
+            disabled={searchChapters === null}
+            onKeyDown={e => {
+              e.stopPropagation()
+              if (e.key === 'Escape') { e.preventDefault(); closeSearch() }
+              else if (e.key === 'Enter') { e.preventDefault(); if (e.shiftKey) searchPrev(); else searchNext() }
+            }}
+          />
+          <span className="reader-search-count">
+            {searchQuery.trim().length < 2 ? '' : searchHits.length === 0 ? '0 / 0' : `${searchIdx + 1} / ${searchHits.length}`}
+          </span>
+          <button className="reader-icon-btn" onClick={searchPrev} disabled={searchHits.length === 0} title="Previous match">▲</button>
+          <button className="reader-icon-btn" onClick={searchNext} disabled={searchHits.length === 0} title="Next match">▼</button>
+          <button className="reader-icon-btn" onClick={closeSearch} title="Close search">✕</button>
+        </div>
+      )}
 
       {/* Stage */}
       <div className="reader-stage" ref={stageRef}>
@@ -793,13 +1001,48 @@ export default function Reader({ book, target, onClose }) {
       )}
 
       {/* Actions over an existing highlight */}
-      {markBar && (
+      {markBar && (() => {
+        const h = hlRef.current.find(x => x.id === markBar.hid)
+        return (
+          <div
+            className="reader-selbar"
+            style={{ left: Math.max(90, Math.min(window.innerWidth - 90, markBar.x)), top: Math.max(52, markBar.y - 46) }}
+          >
+            <button className="reader-hl-copy" onClick={() => copyHighlight(markBar.hid)}>📋 Copy</button>
+            <button
+              className="reader-hl-copy"
+              onClick={() => {
+                setNoteEditor({ hid: markBar.hid, x: markBar.x, y: markBar.y, text: h?.note || '' })
+                setMarkBar(null)
+              }}
+            >📝 {h?.note ? 'Edit note' : 'Add note'}</button>
+            <button className="reader-hl-copy" onClick={() => deleteHighlight(markBar.hid)}>🗑 Remove</button>
+          </div>
+        )
+      })()}
+
+      {/* Note editor over an existing highlight */}
+      {noteEditor && (
         <div
-          className="reader-selbar"
-          style={{ left: Math.max(90, Math.min(window.innerWidth - 90, markBar.x)), top: Math.max(52, markBar.y - 46) }}
+          className="reader-note-editor"
+          style={{ left: Math.max(140, Math.min(window.innerWidth - 140, noteEditor.x)), top: Math.max(52, noteEditor.y - 20) }}
         >
-          <button className="reader-hl-copy" onClick={() => copyHighlight(markBar.hid)}>📋 Copy</button>
-          <button className="reader-hl-copy" onClick={() => deleteHighlight(markBar.hid)}>🗑 Remove</button>
+          <textarea
+            autoFocus
+            className="reader-note-textarea"
+            value={noteEditor.text}
+            placeholder="Add a note…"
+            onChange={e => setNoteEditor(n => ({ ...n, text: e.target.value }))}
+            onKeyDown={e => { if (e.key === 'Escape') setNoteEditor(null) }}
+          />
+          <div className="reader-note-actions">
+            <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => setNoteEditor(null)}>Cancel</button>
+            <button
+              className="btn btn-primary"
+              style={{ fontSize: 12 }}
+              onClick={() => { saveNote(noteEditor.hid, noteEditor.text); setNoteEditor(null) }}
+            >Save</button>
+          </div>
         </div>
       )}
 
