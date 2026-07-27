@@ -5,7 +5,7 @@ import PdfDrawer from '../components/PdfDrawer'
 
 // ── Main view ─────────────────────────────────────────────────────────────────
 export default function PdfTab({ tabId, onTabDeleted, onTabUpdated }) {
-  const { toast } = useApp()
+  const { toast, nudgeLibrary } = useApp()
   const [tab,        setTab]        = useState(null)
   const [editing,    setEditing]    = useState(false)
   const [editName,   setEditName]   = useState('')
@@ -39,6 +39,7 @@ export default function PdfTab({ tabId, onTabDeleted, onTabUpdated }) {
       ? `Found ${result.found} PDF${result.found !== 1 ? 's' : ''} — added ${result.added} new`
       : `No new PDFs (${result.found} found, all already in this tab)`,
       result.added ? 'success' : '')
+    if (result.added > 0) nudgeLibrary({ index: true })
     loadTab()
     onTabUpdated?.()
   }
@@ -85,6 +86,7 @@ export default function PdfTab({ tabId, onTabDeleted, onTabUpdated }) {
     if (result.added) toast(`Added ${result.added} PDF${result.added !== 1 ? 's' : ''}`, 'success')
     if (result.skipped) toast(`${result.skipped} already in this tab`)
     for (const err of result.errors || []) toast(err, 'error')
+    if (result.added > 0) nudgeLibrary({ index: true })
     loadTab()
     onTabUpdated?.()
   }

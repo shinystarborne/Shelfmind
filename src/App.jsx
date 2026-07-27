@@ -88,11 +88,41 @@ export default function App() {
   const [activePdfTabId, setActivePdfTabId] = useState(null)
   const [readerBook, setReaderBook] = useState(null)   // { book, target } → reader open
 
+  // Library front-page nudge banners (Enrich / Search Index) — hidden by default,
+  // surfaced only right after a fresh scan finds books or PDFs get added, so they
+  // don't sit there permanently. Independent of whether a job is actually running/done.
+  const [libraryNudges, setLibraryNudges] = useState({ enrich: false, index: false })
+  const nudgeLibrary  = useCallback((which) => setLibraryNudges(n => ({ ...n, ...which })), [])
+  const dismissNudge  = useCallback((key)   => setLibraryNudges(n => ({ ...n, [key]: false })), [])
+
   const openReader  = useCallback((book, target = null) => setReaderBook({ book, target }), [])
   const closeReader = useCallback(() => setReaderBook(null), [])
-  const [pdfReaderDoc, setPdfReaderDoc] = useState(null)
-  const openPdfReader  = useCallback((doc, target = null) => setPdfReaderDoc({ doc, target }), [])
-  const closePdfReader = useCallback(() => setPdfReaderDoc(null), [])
+
+  // Up to 2 PDF "panes" open at once — normally 1 (full width); a second one
+  // appears via "Open alongside" / "Duplicate alongside" inside the reader.
+  const [pdfPanes, setPdfPanes]         = useState([])   // [{ paneId, doc, target }]
+  const [activePdfPane, setActivePdfPane] = useState(null)
+  const pdfReaderDoc = pdfPanes[0] ?? null   // back-compat for consumers that only know about a single reader
+
+  const openPdfReader = useCallback((doc, target = null) => {
+    const paneId = Date.now().toString(36) + Math.random().toString(36).slice(2)
+    setPdfPanes([{ paneId, doc, target }])
+    setActivePdfPane(paneId)
+  }, [])
+  const closePdfReader = useCallback(() => setPdfPanes([]), [])
+
+  const openPdfReaderAlongside = useCallback((doc, fromPaneId) => {
+    const paneId = Date.now().toString(36) + Math.random().toString(36).slice(2)
+    setPdfPanes(panes => {
+      if (panes.length < 2) return [...panes, { paneId, doc, target: null }]
+      return panes.map(p => (p.paneId === fromPaneId ? p : { paneId, doc, target: null }))
+    })
+    setActivePdfPane(paneId)
+  }, [])
+
+  const closePdfPane = useCallback((paneId) => {
+    setPdfPanes(panes => panes.filter(p => p.paneId !== paneId))
+  }, [])
 
   const loadLists = useCallback(() => {
     fetch(`${API}/lists`).then(r => r.json()).then(setLists).catch(() => {})
@@ -159,12 +189,13 @@ export default function App() {
   const handleScanDone = useCallback((result) => {
     toast(`Scan complete — ${result.added ?? 0} new books added`, 'success')
     fetch(`${API}/books`).then(r => r.json()).then(b => setBookCount(b.length)).catch(() => {})
-  }, [toast])
+    if (result.added > 0) nudgeLibrary({ enrich: true, index: true })
+  }, [toast, nudgeLibrary])
 
   const refreshPrefs = () => fetch(`${API}/preferences`).then(r => r.json()).then(setPrefs)
 
   return (
-    <AppCtx.Provider value={{ toast, prefs, refreshPrefs, toggleTheme, refreshLibrary, setRefreshLibrary, pdfTabs, loadPdfTabs, openReader, readerBook, openPdfReader, pdfReaderDoc }}>
+    <AppCtx.Provider value={{ toast, prefs, refreshPrefs, toggleTheme, refreshLibrary, setRefreshLibrary, pdfTabs, loadPdfTabs, openReader, readerBook, openPdfReader, pdfReaderDoc, libraryNudges, nudgeLibrary, dismissNudge }}>
       <div className={`app-shell${sidebarOpen ? '' : ' sidebar-collapsed'}`}>
         {/* Sidebar */}
         <aside className="sidebar">
@@ -311,7 +342,38 @@ export default function App() {
       </div>
 
       {readerBook && <Reader book={readerBook.book} target={readerBook.target} onClose={closeReader} />}
-      {pdfReaderDoc && <PdfReader doc={pdfReaderDoc.doc} target={pdfReaderDoc.target} onClose={closePdfReader} />}
+
+      {pdfPanes.length === 1 && (
+        <PdfReader
+          doc={pdfPanes[0].doc}
+          target={pdfPanes[0].target}
+          onClose={() => closePdfPane(pdfPanes[0].paneId)}
+          onOpenAlongside={doc => openPdfReaderAlongside(doc, pdfPanes[0].paneId)}
+        />
+      )}
+
+      {pdfPanes.length === 2 && (
+        <div className="pdf-split-wrap">
+          {pdfPanes.map((pane, i) => (
+            <div
+              key={pane.paneId}
+              style={{ display: 'flex', flex: 1, minWidth: 0 }}
+              onPointerDown={() => setActivePdfPane(pane.paneId)}
+              onMouseEnter={() => setActivePdfPane(pane.paneId)}
+            >
+              <PdfReader
+                doc={pane.doc}
+                target={pane.target}
+                persistPosition={i === 0}
+                active={activePdfPane === pane.paneId}
+                onClose={() => closePdfPane(pane.paneId)}
+                onOpenAlongside={doc => openPdfReaderAlongside(doc, pane.paneId)}
+              />
+              {i === 0 && <div className="pdf-split-divider" />}
+            </div>
+          ))}
+        </div>
+      )}
 
       <Toasts toasts={toasts} onDismiss={dismissToast} />
     </AppCtx.Provider>

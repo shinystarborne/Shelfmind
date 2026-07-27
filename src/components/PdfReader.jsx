@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react
 import { API, useApp } from '../App'
 import { GlobalWorkerOptions, getDocument, TextLayer } from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+import PdfPinPanel from './PdfPinPanel'
 
 // Same pin note as pdfThumbnail.js: pdfjs-dist 4.x for this Electron version
 GlobalWorkerOptions.workerSrc = workerUrl
@@ -70,13 +71,38 @@ function highlightQueryOnLayer(layer, query, currentOccIdx = -1) {
   }
 }
 
-export default function PdfReader({ doc: pdfDoc, target, onClose }) {
-  const { prefs } = useApp()
+export default function PdfReader({ doc: pdfDoc, target, onClose, onOpenAlongside, persistPosition = true, active = true }) {
+  const { prefs, toast } = useApp()
   const [numPages, setNumPages] = useState(0)
   const [dims, setDims]         = useState([])     // base {w, h} per page at scale 1
   const [scale, setScale]       = useState(null)   // null until fit-width computed
   const [curPage, setCurPage]   = useState(1)
   const [error, setError]       = useState(null)
+
+  // ── Doc metadata fetched independently of the `doc` prop, which is sometimes
+  // just a lightweight {id, title} (e.g. from a library search-result jump) ──
+  const [docMeta, setDocMeta] = useState(null)   // { pins, tab_id, tab_name, ... } — the full server record
+  useEffect(() => {
+    let alive = true
+    fetch(`${API}/pdf-docs/${pdfDoc.id}`).then(r => r.json()).then(d => { if (alive) setDocMeta(d) }).catch(() => {})
+    return () => { alive = false }
+  }, [pdfDoc.id])
+  const pins = docMeta?.pins || []
+
+  // ── Pinned reference crops: draw-a-rectangle mode + which pins are open ──
+  const [pinMode, setPinMode]         = useState(false)
+  const [openPinIds, setOpenPinIds]   = useState(() => new Set())
+  const [draftSel, setDraftSel]       = useState(null)   // { pageIdx, x0, y0, x1, y1 } in page-local CSS px
+  const pageOverlayElsRef             = useRef([])
+  const draftStartRef                 = useRef(null)
+  const pinModeRef                    = useRef(false)
+  pinModeRef.current                  = pinMode
+  const activeRef                     = useRef(active)
+  activeRef.current                   = active
+
+  // ── Split view: sibling-doc picker for "Open alongside" ──
+  const [siblingPickerOpen, setSiblingPickerOpen] = useState(false)
+  const [siblingDocs, setSiblingDocs]              = useState([])
 
   const containerRef = useRef(null)
   const docRef       = useRef(null)     // pdfjs document
@@ -243,6 +269,7 @@ export default function PdfReader({ doc: pdfDoc, target, onClose }) {
 
   // ── Current page tracking + position saving ─────────────────────────────────
   const savePosition = useCallback((page, s) => {
+    if (!persistPosition) return   // secondary pane of a "duplicate alongside" — primary owns the saved position
     clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(() => {
       fetch(`${API}/pdf-docs/${pdfDoc.id}`, {
@@ -251,7 +278,7 @@ export default function PdfReader({ doc: pdfDoc, target, onClose }) {
         body:    JSON.stringify({ last_page: page, zoom: s }),
       }).catch(() => {})
     }, 800)
-  }, [pdfDoc.id])
+  }, [pdfDoc.id, persistPosition])
 
   const curPageRef = useRef(1)
   const onScroll = useCallback(() => {
@@ -304,6 +331,93 @@ export default function PdfReader({ doc: pdfDoc, target, onClose }) {
     c.addEventListener('wheel', onWheel, { passive: false })
     return () => c.removeEventListener('wheel', onWheel)
   }, [zoom])
+
+  // ── Pinned reference crops ───────────────────────────────────────────────────
+  const startPinMode = useCallback(() => {
+    if (pins.length >= 5) { toast('Max 5 pins — remove one first (hover a numbered chip)', 'error'); return }
+    setPinMode(true)
+  }, [pins.length, toast])
+
+  const cancelPinMode = useCallback(() => {
+    setPinMode(false)
+    setDraftSel(null)
+    draftStartRef.current = null
+  }, [])
+  const cancelPinModeRef = useRef(cancelPinMode)
+  cancelPinModeRef.current = cancelPinMode
+
+  const onPinPointerDown = useCallback((e, pageIdx) => {
+    if (!pinMode) return
+    const rect = pageOverlayElsRef.current[pageIdx]?.getBoundingClientRect()
+    if (!rect) return
+    const x = e.clientX - rect.left, y = e.clientY - rect.top
+    draftStartRef.current = { pageIdx, x, y }
+    setDraftSel({ pageIdx, x0: x, y0: y, x1: x, y1: y })
+    e.currentTarget.setPointerCapture?.(e.pointerId)
+  }, [pinMode])
+
+  const onPinPointerMove = useCallback((e) => {
+    const start = draftStartRef.current
+    if (!start) return
+    const rect = pageOverlayElsRef.current[start.pageIdx]?.getBoundingClientRect()
+    if (!rect) return
+    const x = Math.max(0, Math.min(rect.width,  e.clientX - rect.left))
+    const y = Math.max(0, Math.min(rect.height, e.clientY - rect.top))
+    setDraftSel({ pageIdx: start.pageIdx, x0: start.x, y0: start.y, x1: x, y1: y })
+  }, [])
+
+  const onPinPointerUp = useCallback(async () => {
+    const sel = draftSel
+    draftStartRef.current = null
+    setDraftSel(null)
+    setPinMode(false)
+    if (!sel) return
+    const left = Math.min(sel.x0, sel.x1), top = Math.min(sel.y0, sel.y1)
+    const w = Math.abs(sel.x1 - sel.x0), h = Math.abs(sel.y1 - sel.y0)
+    if (w < 12 || h < 12) return   // treat as an accidental click, not a real selection
+    const s = scaleRef.current
+    const rectPdf = { x: left / s, y: top / s, w: w / s, h: h / s }
+    const res = await fetch(`${API}/pdf-docs/${pdfDoc.id}/pins`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ page: sel.pageIdx + 1, rect: rectPdf }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) { toast(data.error || 'Could not save pin', 'error'); return }
+    setDocMeta(m => m ? { ...m, pins: [...(m.pins || []), data] } : m)
+    setOpenPinIds(ids => new Set(ids).add(data.id))
+  }, [draftSel, pdfDoc.id, toast])
+
+  const togglePin = useCallback((pinId) => {
+    setOpenPinIds(ids => {
+      const next = new Set(ids)
+      if (next.has(pinId)) next.delete(pinId); else next.add(pinId)
+      return next
+    })
+  }, [])
+
+  const deletePin = useCallback(async (pinId) => {
+    setOpenPinIds(ids => { const next = new Set(ids); next.delete(pinId); return next })
+    setDocMeta(m => m ? { ...m, pins: (m.pins || []).filter(p => p.id !== pinId) } : m)
+    await fetch(`${API}/pdf-docs/${pdfDoc.id}/pins/${pinId}`, { method: 'DELETE' }).catch(() => {})
+  }, [pdfDoc.id])
+
+  // ── Split view: "Open alongside" sibling picker ─────────────────────────────
+  const openSiblingPicker = useCallback(async () => {
+    setSiblingPickerOpen(o => !o)
+    if (!docMeta?.tab_id || siblingDocs.length) return
+    const tab = await fetch(`${API}/pdf-tabs/${docMeta.tab_id}`).then(r => r.json()).catch(() => null)
+    setSiblingDocs((tab?.docs || []).filter(d => d.id !== pdfDoc.id))
+  }, [docMeta, siblingDocs.length, pdfDoc.id])
+
+  const pickSibling = useCallback((doc) => {
+    setSiblingPickerOpen(false)
+    onOpenAlongside?.(doc)
+  }, [onOpenAlongside])
+
+  const duplicateAlongside = useCallback(() => {
+    onOpenAlongside?.({ id: pdfDoc.id, title: pdfDoc.title })
+  }, [onOpenAlongside, pdfDoc.id, pdfDoc.title])
 
   // ── Search ("find in this PDF only") ────────────────────────────────────────
   // pdfSearchPages: null = not fetched yet, [] = fetched but empty/unsupported.
@@ -403,6 +517,8 @@ export default function PdfReader({ doc: pdfDoc, target, onClose }) {
 
   useEffect(() => {
     const onKey = (e) => {
+      if (!activeRef.current) return   // split view: only the hovered/focused pane reacts to shortcuts
+      if (pinModeRef.current && e.key === 'Escape') { cancelPinModeRef.current(); return }
       if (searchOpen && e.key === 'Escape') { closeSearchRef.current(); return }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') { e.preventDefault(); openSearchRef.current(); return }
       if (e.key === 'Escape') closeRef.current()
@@ -416,7 +532,7 @@ export default function PdfReader({ doc: pdfDoc, target, onClose }) {
 
   const close = useCallback(() => {
     clearTimeout(saveTimer.current)
-    if (restoredRef.current) {
+    if (restoredRef.current && persistPosition) {
       fetch(`${API}/pdf-docs/${pdfDoc.id}`, {
         method:  'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -425,7 +541,7 @@ export default function PdfReader({ doc: pdfDoc, target, onClose }) {
       }).catch(() => {})
     }
     onClose()
-  }, [pdfDoc.id, onClose])
+  }, [pdfDoc.id, onClose, persistPosition])
   const closeRef = useRef(close)
   closeRef.current = close
 
@@ -467,8 +583,54 @@ export default function PdfReader({ doc: pdfDoc, target, onClose }) {
           <span className="pdf-zoom-pct">{scale ? `${Math.round(scale * 100)}%` : '…'}</span>
           <button className="reader-icon-btn" onClick={() => zoom(1.15)} title="Zoom in (+)">+</button>
           <button className="reader-icon-btn pdf-fit-btn" onClick={fitWidth} title="Fit width (0)">⇔</button>
+
+          <div className="pdf-pin-tray">
+            {pins.map((pin, i) => (
+              <button
+                key={pin.id}
+                className={`pdf-pin-chip ${openPinIds.has(pin.id) ? 'active' : ''}`}
+                onClick={() => togglePin(pin.id)}
+                title={`Pin ${i + 1} · p.${pin.page} — click to show/hide`}
+              >
+                {i + 1}
+                <span
+                  className="pdf-pin-chip-delete"
+                  title="Remove this pin"
+                  onClick={e => { e.stopPropagation(); deletePin(pin.id) }}
+                >✕</span>
+              </button>
+            ))}
+            <button
+              className={`reader-icon-btn ${pinMode ? 'active' : ''}`}
+              onClick={() => (pinMode ? cancelPinMode() : startPinMode())}
+              title="Draw a new pinned reference crop (Esc to cancel)"
+            >📌</button>
+          </div>
+
+          <div className="pdf-split-actions">
+            <button className="reader-icon-btn" onClick={duplicateAlongside} title="Duplicate this PDF alongside">⧉</button>
+            <div style={{ position: 'relative' }}>
+              <button
+                className={`reader-icon-btn ${siblingPickerOpen ? 'active' : ''}`}
+                onClick={openSiblingPicker}
+                title="Open another PDF from this tab alongside"
+              >⇄</button>
+              {siblingPickerOpen && (
+                <div className="pdf-sibling-picker">
+                  {siblingDocs.length === 0 && <div className="pdf-sibling-empty">No other PDFs in this tab</div>}
+                  {siblingDocs.map(d => (
+                    <div key={d.id} className="pdf-sibling-item" onClick={() => pickSibling(d)}>{d.title}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
+
+      {pinMode && (
+        <div className="pdf-pin-hint">Drag a rectangle around the area you want to pin — Esc to cancel</div>
+      )}
 
       {/* In-PDF search bar */}
       {searchOpen && (
@@ -512,6 +674,25 @@ export default function PdfReader({ doc: pdfDoc, target, onClose }) {
                 className="pdf-page-text textLayer"
                 ref={el => { textLayerElsRef.current[i] = el }}
               />
+              <div
+                className={`pdf-pin-draw-layer ${pinMode ? 'active' : ''}`}
+                ref={el => { pageOverlayElsRef.current[i] = el }}
+                onPointerDown={e => onPinPointerDown(e, i)}
+                onPointerMove={onPinPointerMove}
+                onPointerUp={onPinPointerUp}
+              >
+                {draftSel && draftSel.pageIdx === i && (
+                  <div
+                    className="pdf-pin-draft-rect"
+                    style={{
+                      left:   Math.min(draftSel.x0, draftSel.x1),
+                      top:    Math.min(draftSel.y0, draftSel.y1),
+                      width:  Math.abs(draftSel.x1 - draftSel.x0),
+                      height: Math.abs(draftSel.y1 - draftSel.y0),
+                    }}
+                  />
+                )}
+              </div>
               <div className="pdf-page-num">{i + 1}</div>
             </div>
           ))}
@@ -522,6 +703,16 @@ export default function PdfReader({ doc: pdfDoc, target, onClose }) {
           )}
         </div>
       </div>
+
+      {pins.filter(p => openPinIds.has(p.id)).map(pin => (
+        <PdfPinPanel
+          key={pin.id}
+          pin={pin}
+          index={pins.findIndex(p => p.id === pin.id)}
+          pdfDocRef={docRef}
+          onClose={() => togglePin(pin.id)}
+        />
+      ))}
     </div>
   )
 }

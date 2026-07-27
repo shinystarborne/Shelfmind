@@ -1048,6 +1048,26 @@ class Store {
     return d
   }
 
+  addPdfPin(docId, { page, rect }) {
+    const d = this.pdfDocs.find(d => d.id === docId)
+    if (!d) return null
+    d.pins = d.pins || []
+    const pin = { id: Date.now().toString(36) + Math.random().toString(36).slice(2), page, rect }
+    d.pins.push(pin)
+    writeJson(this._pdfDocsFile, this.pdfDocs)
+    return pin
+  }
+
+  removePdfPin(docId, pinId) {
+    const d = this.pdfDocs.find(d => d.id === docId)
+    if (!d || !d.pins) return false
+    const before = d.pins.length
+    d.pins = d.pins.filter(p => p.id !== pinId)
+    if (d.pins.length === before) return false
+    writeJson(this._pdfDocsFile, this.pdfDocs)
+    return true
+  }
+
   deletePdfDoc(id) {
     const idx = this.pdfDocs.findIndex(d => d.id === id)
     if (idx === -1) return false

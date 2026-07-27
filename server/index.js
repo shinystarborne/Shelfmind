@@ -881,6 +881,25 @@ function startServer(port = 3001) {
       res.json({ ok: true })
     })
 
+    // Pinned reference crops (max 5 per doc) — used by the in-app reader's
+    // picture-in-picture panels for keys/legends on other pages.
+    app.post('/api/pdf-docs/:id/pins', (req, res) => {
+      const { page, rect } = req.body
+      if (!(page > 0) || !rect || typeof rect.x !== 'number' || typeof rect.y !== 'number' || typeof rect.w !== 'number' || typeof rect.h !== 'number') {
+        return res.status(400).json({ error: 'page and rect {x,y,w,h} are required' })
+      }
+      const doc = store.getPdfDoc(req.params.id)
+      if (!doc) return res.status(404).json({ error: 'Not found' })
+      if ((doc.pins || []).length >= 5) return res.status(400).json({ error: 'Max 5 pins — remove one first' })
+      const pin = store.addPdfPin(req.params.id, { page, rect })
+      res.json(pin)
+    })
+
+    app.delete('/api/pdf-docs/:id/pins/:pinId', (req, res) => {
+      if (!store.removePdfPin(req.params.id, req.params.pinId)) return res.status(404).json({ error: 'Not found' })
+      res.json({ ok: true })
+    })
+
     // Raw PDF bytes — used client-side by pdf.js to render a cover thumbnail
     app.get('/api/pdf-docs/:id/file', (req, res) => {
       const doc = store.getPdfDoc(req.params.id)

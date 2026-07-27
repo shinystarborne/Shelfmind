@@ -92,13 +92,21 @@ function EnrichBar({ state, onStart, onDismiss }) {
     <div className="enrich-banner">
       <span>🔍</span>
       <span>Fetch metadata from Open Library for all books</span>
-      <button
-        className="btn btn-secondary"
-        style={{ marginLeft: 'auto', padding: '4px 12px', fontSize: 12 }}
-        onClick={() => onStart()}
-      >
-        Enrich All
-      </button>
+      <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
+        <button
+          className="btn btn-secondary"
+          style={{ padding: '4px 12px', fontSize: 12 }}
+          onClick={() => onStart()}
+        >
+          Enrich All
+        </button>
+        <button
+          className="btn btn-ghost"
+          style={{ padding: '3px 8px', fontSize: 11 }}
+          onClick={onDismiss}
+          title="Dismiss"
+        >✕</button>
+      </div>
     </div>
   )
 }
@@ -156,13 +164,21 @@ function SearchIndexBar({ state, onStart, onDismiss }) {
     <div className="enrich-banner">
       <span>🔎</span>
       <span>Build a search index to find text inside your books and PDFs</span>
-      <button
-        className="btn btn-secondary"
-        style={{ marginLeft: 'auto', padding: '4px 12px', fontSize: 12 }}
-        onClick={() => onStart()}
-      >
-        Build Search Index
-      </button>
+      <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
+        <button
+          className="btn btn-secondary"
+          style={{ padding: '4px 12px', fontSize: 12 }}
+          onClick={() => onStart()}
+        >
+          Build Search Index
+        </button>
+        <button
+          className="btn btn-ghost"
+          style={{ padding: '3px 8px', fontSize: 11 }}
+          onClick={onDismiss}
+          title="Dismiss"
+        >✕</button>
+      </div>
     </div>
   )
 }
@@ -386,7 +402,7 @@ function GroupSection({ name, books, selectedId, selectMode, selectedIds, onChec
 
 // ── Main Library view ─────────────────────────────────────────────────────────
 export default function Library() {
-  const { toast, prefs, setRefreshLibrary, refreshLibrary, openPdfReader } = useApp()
+  const { toast, prefs, setRefreshLibrary, refreshLibrary, openPdfReader, libraryNudges, dismissNudge } = useApp()
   const [books, setBooks]           = useState([])
   const [loading, setLoading]       = useState(true)
   const [search, setSearch]         = useState('')
@@ -722,19 +738,25 @@ export default function Library() {
         </div>
       </div>
 
-      {/* Enrich progress banner */}
-      <EnrichBar
-        state={enrichState}
-        onStart={handleEnrichAll}
-        onDismiss={() => setEnrichState({ running: false, done: false, current: 0, total: 0, success: 0 })}
-      />
+      {/* Enrich progress banner — hidden unless actively running/done, or nudged
+          by a fresh scan finding new books (see App.jsx's handleScanDone) */}
+      {(enrichState.running || enrichState.done || libraryNudges.enrich) && (
+        <EnrichBar
+          state={enrichState}
+          onStart={handleEnrichAll}
+          onDismiss={() => { setEnrichState({ running: false, done: false, current: 0, total: 0, success: 0 }); dismissNudge('enrich') }}
+        />
+      )}
 
-      {/* Search index progress banner */}
-      <SearchIndexBar
-        state={indexState}
-        onStart={handleIndexAll}
-        onDismiss={() => setIndexState({ running: false, done: false, current: 0, total: 0, success: 0 })}
-      />
+      {/* Search index banner — hidden unless active/done, or nudged by a fresh
+          scan or new PDFs being added (see App.jsx / PdfTab.jsx) */}
+      {(indexState.running || indexState.done || libraryNudges.index) && (
+        <SearchIndexBar
+          state={indexState}
+          onStart={handleIndexAll}
+          onDismiss={() => { setIndexState({ running: false, done: false, current: 0, total: 0, success: 0 }); dismissNudge('index') }}
+        />
+      )}
 
       {/* Yearly goal bar */}
       {goal > 0 && (

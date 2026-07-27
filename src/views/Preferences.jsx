@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { API, useApp } from '../App'
 import LibraryImportModal from '../components/LibraryImportModal'
 import { formatFileSize } from '../components/BookCard'
@@ -306,10 +306,20 @@ export default function Preferences({ onSave }) {
   const [qr, setQr] = useState(null)
   const [saving, setSaving] = useState(false)
   const [enrichState, setEnrichState] = useState({ running: false, done: false })
+  const [indexState, setIndexState]   = useState({ running: false, done: false })
   const [showLibImport, setShowLibImport] = useState(false)
+  const enrichPollRef = useRef(null)
+  const indexPollRef  = useRef(null)
 
   useEffect(() => {
     fetch(`${API}/preferences`).then(r => r.json()).then(setPrefs)
+  }, [])
+
+  // Pick up a job already running (started from here or from the Library banner)
+  useEffect(() => {
+    fetch(`${API}/enrich/status`).then(r => r.json()).then(s => { if (s.running) { setEnrichState(s); startEnrichPoll() } }).catch(() => {})
+    fetch(`${API}/search-index/status`).then(r => r.json()).then(s => { if (s.running) { setIndexState(s); startIndexPoll() } }).catch(() => {})
+    return () => { clearInterval(enrichPollRef.current); clearInterval(indexPollRef.current) }
   }, [])
 
   const set = (key, val) => setPrefs(p => ({ ...p, [key]: val }))
@@ -331,16 +341,38 @@ export default function Preferences({ onSave }) {
     setQr(data)
   }
 
+  const startEnrichPoll = () => {
+    if (enrichPollRef.current) return
+    enrichPollRef.current = setInterval(async () => {
+      const s = await fetch(`${API}/enrich/status`).then(r => r.json()).catch(() => null)
+      if (!s) return
+      setEnrichState(s)
+      if (s.done || !s.running) { clearInterval(enrichPollRef.current); enrichPollRef.current = null }
+    }, 1200)
+  }
+
   const enrichAll = async () => {
     if (enrichState.running) return
     setEnrichState({ running: true, done: false, current: 0, total: 0 })
     await fetch(`${API}/enrich/all`, { method: 'POST' })
+    startEnrichPoll()
+  }
 
-    const poll = setInterval(async () => {
-      const s = await fetch(`${API}/enrich/status`).then(r => r.json())
-      setEnrichState(s)
-      if (s.done || !s.running) clearInterval(poll)
+  const startIndexPoll = () => {
+    if (indexPollRef.current) return
+    indexPollRef.current = setInterval(async () => {
+      const s = await fetch(`${API}/search-index/status`).then(r => r.json()).catch(() => null)
+      if (!s) return
+      setIndexState(s)
+      if (s.done || !s.running) { clearInterval(indexPollRef.current); indexPollRef.current = null }
     }, 1200)
+  }
+
+  const buildIndex = async () => {
+    if (indexState.running) return
+    setIndexState({ running: true, done: false, current: 0, total: 0 })
+    await fetch(`${API}/search-index/all`, { method: 'POST' })
+    startIndexPoll()
   }
 
   return (
@@ -453,6 +485,39 @@ export default function Preferences({ onSave }) {
             disabled={enrichState.running}
           >
             {enrichState.running ? <span className="spin">↻</span> : '🔍'} Enrich All Books
+          </button>
+        </div>
+
+        {/* Search index */}
+        <div className="prefs-section">
+          <h3>🔎 Search Index</h3>
+          <p style={{ fontSize: 13, color: 'var(--text-soft)', marginBottom: 16, lineHeight: 1.6 }}>
+            Extract and index the full text of your books and PDFs, so the Library's
+            search can find matches inside them, not just in titles and authors.
+          </p>
+          {indexState.running && (
+            <div className="enrich-banner" style={{ marginBottom: 12, borderRadius: 8 }}>
+              <span className="spin">↻</span>
+              <span>Indexing… {indexState.current}/{indexState.total}</span>
+              <div className="enrich-bar">
+                <div
+                  className="enrich-bar-fill"
+                  style={{ width: indexState.total > 0 ? `${(indexState.current / indexState.total) * 100}%` : '0%' }}
+                />
+              </div>
+            </div>
+          )}
+          {indexState.done && (
+            <p style={{ fontSize: 12, color: 'var(--sage-dark)', marginBottom: 12 }}>
+              ✓ Done! {indexState.success}/{indexState.total} indexed.
+            </p>
+          )}
+          <button
+            className="btn btn-secondary"
+            onClick={buildIndex}
+            disabled={indexState.running}
+          >
+            {indexState.running ? <span className="spin">↻</span> : '🔎'} Build Search Index
           </button>
         </div>
 
