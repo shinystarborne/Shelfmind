@@ -1733,6 +1733,16 @@ h3 { font-size: 18px; }
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  /* Electron's frameless-window drag regions are a global union of every
+     rendered element's -webkit-app-region, independent of paint/z-index —
+     the Library topbar underneath (still mounted, just visually covered)
+     keeps contributing its drag strip even while the reader is on top of
+     it. Without this, clicks on the reader's own topbar buttons that land
+     inside that strip get eaten as a window-drag instead of a click; how
+     often that happens shifts with window size because the reader's button
+     cluster is itself offset by a titlebar-area-width calc. Blanket
+     no-drag here subtracts the whole reader surface from that union. */
+  -webkit-app-region: no-drag;
 }
 
 /* Top / bottom chrome — slide away when idle */
