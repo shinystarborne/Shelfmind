@@ -19,6 +19,11 @@ export let API = `http://${API_HOST}:3001/api`
 export const AppCtx = createContext(null)
 export const useApp = () => useContext(AppCtx)
 
+// Pinned pseudo-shelf id — computed server-side from series/read-status, not a
+// user-saved filter, so Library special-cases it instead of treating it like
+// a normal smart shelf.
+export const CONTINUE_SERIES_SHELF_ID = '__continue-series__'
+
 // ── Toast system ──────────────────────────────────────────────────────────────
 function Toasts({ toasts, onDismiss }) {
   return (
@@ -117,6 +122,9 @@ export default function App() {
   const refreshLibrary    = useCallback(() => _refreshLibraryFn(), [_refreshLibraryFn])
   const [lists, setLists] = useState([])
   const [activeListId, setActiveListId] = useState(null)
+  const [shelves, setShelves] = useState([])
+  const [activeShelfId, setActiveShelfId] = useState(null)
+  const [continueSeriesCount, setContinueSeriesCount] = useState(0)
   const [pdfTabs, setPdfTabs] = useState([])
   const [activePdfTabId, setActivePdfTabId] = useState(null)
   const [readerBook, setReaderBook] = useState(null)   // { book, target } → reader open
@@ -212,6 +220,16 @@ export default function App() {
     fetch(`${API}/lists`).then(r => r.json()).then(setLists).catch(() => {})
   }, [])
 
+  const loadShelves = useCallback(() => {
+    fetch(`${API}/smart-shelves`).then(r => r.json()).then(setShelves).catch(() => {})
+    fetch(`${API}/continue-series`).then(r => r.json()).then(b => setContinueSeriesCount(b.length)).catch(() => {})
+  }, [])
+
+  const openShelf = useCallback((shelfId) => {
+    setActiveShelfId(shelfId)
+    setView('library')
+  }, [])
+
   const loadPdfTabs = useCallback(() => {
     fetch(`${API}/pdf-tabs`).then(r => r.json()).then(setPdfTabs).catch(() => {})
   }, [])
@@ -257,6 +275,7 @@ export default function App() {
       fetch(`${API}/books`).then(r => r.json()).then(b => setBookCount(b.length)).catch(() => {})
       fetch(`${API}/lists`).then(r => r.json()).then(setLists).catch(() => {})
       fetch(`${API}/pdf-tabs`).then(r => r.json()).then(setPdfTabs).catch(() => {})
+      loadShelves()
     }
     init()
   }, [])
@@ -287,6 +306,7 @@ export default function App() {
       pdfTabs, loadPdfTabs, openReader, readerBook, openPdfReader, pdfReaderDoc,
       libraryNudges, nudgeLibrary, dismissNudge,
       updateState, checkForUpdate, downloadUpdate, installUpdateNow, dismissUpdateBanner,
+      shelves, activeShelfId, setActiveShelfId, loadShelves, continueSeriesCount,
     }}>
       <div className={`app-shell${sidebarOpen ? '' : ' sidebar-collapsed'}`}>
         {/* Sidebar */}
@@ -310,8 +330,8 @@ export default function App() {
               {NAV.map(n => (
                 <button
                   key={n.id}
-                  className={`nav-item ${view === n.id ? 'active' : ''}`}
-                  onClick={() => setView(n.id)}
+                  className={`nav-item ${view === n.id && !activeShelfId ? 'active' : ''}`}
+                  onClick={() => { setView(n.id); if (n.id === 'library') setActiveShelfId(null) }}
                 >
                   <span className="nav-icon">{n.icon}</span>
                   {n.label}
@@ -364,6 +384,31 @@ export default function App() {
                     </button>
                   ))}
                 </>
+              )}
+
+              <div className="nav-section-label" style={{ marginTop: 12 }}>Smart Shelves</div>
+              <button
+                className={`nav-item ${view === 'library' && activeShelfId === CONTINUE_SERIES_SHELF_ID ? 'active' : ''}`}
+                onClick={() => openShelf(CONTINUE_SERIES_SHELF_ID)}
+              >
+                <span className="nav-icon">📖</span>
+                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Continue the Series</span>
+                {continueSeriesCount > 0 && <span className="nav-badge">{continueSeriesCount}</span>}
+              </button>
+              {shelves.map(s => (
+                <button
+                  key={s.id}
+                  className={`nav-item ${view === 'library' && activeShelfId === s.id ? 'active' : ''}`}
+                  onClick={() => openShelf(s.id)}
+                >
+                  <span className="nav-icon">🗂️</span>
+                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</span>
+                </button>
+              ))}
+              {shelves.length === 0 && (
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', padding: '4px 8px' }}>
+                  Save a filter combo from the Library to create one
+                </div>
               )}
             </nav>
 
