@@ -1,3 +1,6 @@
-## What's new in 1.10.0
+## Library
+- Watch-folder auto-rescan — the library now notices new, removed, or edited files on disk automatically (debounced ~3s), no need to click "Scan Library".
 
-- **Beta update channel** — opt in to beta releases from Preferences → Updates with a new "Include beta releases" checkbox. Beta builds are published as GitHub prereleases; unchecking the box and checking again will offer the latest stable release even if its version number is lower than what you're running.
+## Updates
+- ShelfMind now quietly checks for updates a few seconds after launch and shows a small banner if one is found (respects the beta-releases preference).
+- Downloaded updates now show a "What's new" modal with the release notes before you restart to install.
