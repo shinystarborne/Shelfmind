@@ -253,11 +253,9 @@ function ShortcutsSection() {
 const isPrerelease = (v) => !!v && v.includes('-')
 
 function UpdaterSection() {
+  const { updateState, checkForUpdate, downloadUpdate, installUpdateNow } = useApp()
+  const { status, info: updateInfo, progress, error: errorMsg } = updateState
   const [version, setVersion]     = useState('')
-  const [status, setStatus]       = useState('idle')
-  const [updateInfo, setUpdateInfo] = useState(null)
-  const [progress, setProgress]   = useState(0)
-  const [errorMsg, setErrorMsg]   = useState('')
   const [betaUpdates, setBetaUpdates] = useState(false)
 
   const api = window.electronAPI
@@ -266,12 +264,6 @@ function UpdaterSection() {
     if (!api) return
     api.getAppVersion().then(setVersion)
     fetch(`${API}/preferences`).then(r => r.json()).then(p => setBetaUpdates(!!p.beta_updates)).catch(() => {})
-    api.onUpdateAvailable(info  => { setUpdateInfo(info); setStatus('available') })
-    api.onUpdateNotAvailable(()  => setStatus('up-to-date'))
-    api.onUpdateProgress(p       => { setProgress(Math.round(p.percent)); setStatus('downloading') })
-    api.onUpdateDownloaded(info  => { setUpdateInfo(info); setStatus('ready') })
-    api.onUpdateError(msg        => { setErrorMsg(msg); setStatus('error') })
-    return () => api.removeUpdateListeners()
   }, [])
 
   if (!api) return null
@@ -285,28 +277,20 @@ function UpdaterSection() {
     })
   }
 
-  const check = async () => {
-    setStatus('checking')
-    setErrorMsg('')
-    try {
-      await api.checkForUpdates({ beta: betaUpdates })
-    } catch (err) {
-      const msg = err.message || ''
-      if (msg.includes('No published versions') || msg.includes('Unable to find latest') || msg.includes('Cannot parse')) {
-        setStatus('error')
-        setErrorMsg('No valid release found on GitHub. Make sure the release is published (not a draft) and was built with "npm run release".')
-      } else if (msg.includes('latest.yml')) {
-        setStatus('error')
-        setErrorMsg('Release is missing update metadata. Publish using "npm run release" so latest.yml is included.')
-      } else if (msg.includes('packaged') || msg.includes('packed')) {
-        setStatus('error')
-        setErrorMsg('Updates only work in the installed app, not dev mode.')
-      } else {
-        setStatus('error')
-        setErrorMsg('Update check failed.')
-        console.error('[updater]', msg)
-      }
+  const check = () => checkForUpdate(betaUpdates)
+
+  const friendlyError = (msg) => {
+    if (!msg) return 'Update check failed.'
+    if (msg.includes('No published versions') || msg.includes('Unable to find latest') || msg.includes('Cannot parse')) {
+      return 'No valid release found on GitHub. Make sure the release is published (not a draft) and was built with "npm run release".'
     }
+    if (msg.includes('latest.yml')) {
+      return 'Release is missing update metadata. Publish using "npm run release" so latest.yml is included.'
+    }
+    if (msg.includes('packaged') || msg.includes('packed')) {
+      return 'Updates only work in the installed app, not dev mode.'
+    }
+    return 'Update check failed.'
   }
 
   return (
@@ -353,7 +337,7 @@ function UpdaterSection() {
               ? `v${updateInfo?.version} (stable) is available — this will move you back off the beta channel.`
               : `v${updateInfo?.version}${isPrerelease(updateInfo?.version) ? ' (beta)' : ''} is available.`}
           </p>
-          <button className="btn btn-primary" onClick={() => { api.downloadUpdate(); setStatus('downloading') }}>
+          <button className="btn btn-primary" onClick={downloadUpdate}>
             Download Update
           </button>
         </div>
@@ -371,7 +355,7 @@ function UpdaterSection() {
           <p style={{ fontSize: 13, color: 'var(--sage-dark)', marginBottom: 8 }}>
             v{updateInfo?.version} downloaded and ready to install.
           </p>
-          <button className="btn btn-primary" onClick={() => api.installUpdate()}>
+          <button className="btn btn-primary" onClick={installUpdateNow}>
             Restart &amp; Install
           </button>
         </div>
@@ -379,7 +363,7 @@ function UpdaterSection() {
       {status === 'error' && (
         <div>
           <p style={{ fontSize: 13, color: '#c0392b', marginBottom: 8 }}>
-            {errorMsg || 'Update check failed.'}
+            {friendlyError(errorMsg)}
           </p>
           <button className="btn btn-secondary" onClick={check}>Try Again</button>
         </div>

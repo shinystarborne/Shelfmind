@@ -7,6 +7,7 @@ import PdfTab from './views/PdfTab'
 import Reader from './components/Reader'
 import PdfReader from './components/PdfReader'
 import Quotes from './views/Quotes'
+import UpdateNotesModal from './components/UpdateNotesModal'
 
 // When loaded in Electron (file://) hostname is empty — fall back to localhost.
 // When opened in a browser via QR code the hostname is the LAN IP, so API calls go to the right machine.
@@ -66,6 +67,38 @@ function ScanButton({ onScanDone }) {
   )
 }
 
+// ── Update suggestion banner ─────────────────────────────────────────────────
+function UpdateBanner() {
+  const { updateState, downloadUpdate, dismissUpdateBanner } = useApp()
+  const { status, info, progress } = updateState
+  if (status !== 'available' && status !== 'downloading') return null
+
+  return (
+    <div className="update-banner" style={{
+      position: 'fixed', top: 12, right: 12, zIndex: 500,
+      display: 'flex', alignItems: 'center', gap: 10,
+      background: 'var(--cream)', border: '1px solid var(--border)',
+      borderRadius: 'var(--radius-md)', padding: '10px 14px', boxShadow: 'var(--shadow-lift)',
+      fontSize: 13, color: 'var(--text)',
+    }}>
+      <span>
+        {status === 'downloading'
+          ? `Downloading v${info?.version}… ${progress}%`
+          : `ShelfMind v${info?.version} is available.`}
+      </span>
+      {status === 'available' && (
+        <button className="btn btn-primary" style={{ padding: '4px 10px' }} onClick={downloadUpdate}>Update</button>
+      )}
+      <button
+        className="btn btn-ghost"
+        style={{ padding: '2px 6px', fontSize: 14 }}
+        onClick={dismissUpdateBanner}
+        title="Dismiss"
+      >✕</button>
+    </div>
+  )
+}
+
 // ── Nav items ─────────────────────────────────────────────────────────────────
 const NAV = [
   { id: 'library',  icon: '📚', label: 'Library' },
@@ -87,6 +120,57 @@ export default function App() {
   const [pdfTabs, setPdfTabs] = useState([])
   const [activePdfTabId, setActivePdfTabId] = useState(null)
   const [readerBook, setReaderBook] = useState(null)   // { book, target } → reader open
+
+  // App-wide updater state — shared by the auto-check-on-launch banner/modal below
+  // and Preferences' manual "Check for Updates" button, so both reflect one truth
+  // and only App (which never unmounts) owns the electron-updater IPC listeners.
+  const [updateState, setUpdateState] = useState({ status: 'idle', info: null, progress: 0, error: null })
+  const [updateBannerDismissed, setUpdateBannerDismissed] = useState(false)
+  const [readyModalDismissed, setReadyModalDismissed] = useState(false)
+  const dismissUpdateBanner = useCallback(() => setUpdateBannerDismissed(true), [])
+
+  const checkForUpdate = useCallback((beta) => {
+    const api = window.electronAPI
+    if (!api) return Promise.resolve()
+    setUpdateState(s => ({ ...s, status: 'checking', error: null }))
+    return api.checkForUpdates({ beta }).catch(err => {
+      setUpdateState(s => ({ ...s, status: 'error', error: err.message || 'Update check failed' }))
+    })
+  }, [])
+
+  const downloadUpdate = useCallback(() => {
+    window.electronAPI?.downloadUpdate()
+    setUpdateState(s => ({ ...s, status: 'downloading', progress: 0 }))
+  }, [])
+
+  const installUpdateNow = useCallback(() => {
+    window.electronAPI?.installUpdate()
+  }, [])
+
+  useEffect(() => {
+    const api = window.electronAPI
+    if (!api) return
+    // These listeners live for the whole app session — deliberately never torn down
+    // via removeUpdateListeners(), since Preferences' UpdaterSection now reads this
+    // same shared state instead of registering its own.
+    api.onUpdateAvailable(info => {
+      setUpdateState(s => ({ ...s, status: 'available', info, error: null }))
+      setUpdateBannerDismissed(false)
+    })
+    api.onUpdateNotAvailable(() => {
+      setUpdateState(s => (s.status === 'checking' ? { ...s, status: 'up-to-date' } : s))
+    })
+    api.onUpdateProgress(p => {
+      setUpdateState(s => ({ ...s, status: 'downloading', progress: Math.round(p.percent) }))
+    })
+    api.onUpdateDownloaded(info => {
+      setUpdateState(s => ({ ...s, status: 'ready', info, error: null }))
+      setReadyModalDismissed(false)
+    })
+    api.onUpdateError(msg => {
+      setUpdateState(s => ({ ...s, status: 'error', error: msg }))
+    })
+  }, [])
 
   // Library front-page nudge banners (Enrich / Search Index) — hidden by default,
   // surfaced only right after a fresh scan finds books or PDFs get added, so they
@@ -166,6 +250,9 @@ export default function App() {
         const theme = p.theme === 'dark' ? 'dark' : 'light'
         document.documentElement.setAttribute('data-theme', theme)
         window.electronAPI?.setTheme(theme)
+        // Quietly check for updates a few seconds after launch — respects the
+        // beta-channel preference; only surfaces UI if something is actually found.
+        if (window.electronAPI) setTimeout(() => checkForUpdate(!!p.beta_updates), 5000)
       }).catch(() => {})
       fetch(`${API}/books`).then(r => r.json()).then(b => setBookCount(b.length)).catch(() => {})
       fetch(`${API}/lists`).then(r => r.json()).then(setLists).catch(() => {})
@@ -195,7 +282,12 @@ export default function App() {
   const refreshPrefs = () => fetch(`${API}/preferences`).then(r => r.json()).then(setPrefs)
 
   return (
-    <AppCtx.Provider value={{ toast, prefs, refreshPrefs, toggleTheme, refreshLibrary, setRefreshLibrary, pdfTabs, loadPdfTabs, openReader, readerBook, openPdfReader, pdfReaderDoc, libraryNudges, nudgeLibrary, dismissNudge }}>
+    <AppCtx.Provider value={{
+      toast, prefs, refreshPrefs, toggleTheme, refreshLibrary, setRefreshLibrary,
+      pdfTabs, loadPdfTabs, openReader, readerBook, openPdfReader, pdfReaderDoc,
+      libraryNudges, nudgeLibrary, dismissNudge,
+      updateState, checkForUpdate, downloadUpdate, installUpdateNow, dismissUpdateBanner,
+    }}>
       <div className={`app-shell${sidebarOpen ? '' : ' sidebar-collapsed'}`}>
         {/* Sidebar */}
         <aside className="sidebar">
@@ -376,6 +468,14 @@ export default function App() {
       )}
 
       <Toasts toasts={toasts} onDismiss={dismissToast} />
+      <UpdateBanner />
+      {updateState.status === 'ready' && !readyModalDismissed && (
+        <UpdateNotesModal
+          info={updateState.info}
+          onInstall={installUpdateNow}
+          onLater={() => setReadyModalDismissed(true)}
+        />
+      )}
     </AppCtx.Provider>
   )
 }
