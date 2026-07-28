@@ -1,10 +1,9 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import Fuse from 'fuse.js'
-import { API, useApp } from '../App'
+import { API, useApp, CONTINUE_SERIES_SHELF_ID } from '../App'
 import BookCard, { BookListItem } from '../components/BookCard'
 import BookDrawer from '../components/BookDrawer'
 import DuplicatesModal from '../components/DuplicatesModal'
-import { coverSrc, initials, displayAuthor } from '../components/BookCard'
 
 const SORT_OPTIONS = [
   { value: 'title',   label: 'Title A–Z' },
@@ -243,51 +242,6 @@ function FixedDropdown({ label, active, items, selected, onSelect, onClose }) {
   )
 }
 
-// ── Read Next section ─────────────────────────────────────────────────────────
-function ReadNextSection({ onBookClick }) {
-  const [books,     setBooks]     = useState([])
-  const [collapsed, setCollapsed] = useState(true)
-
-  useEffect(() => {
-    fetch(`${API}/recommendations?limit=5`)
-      .then(r => r.json())
-      .then(setBooks)
-      .catch(() => {})
-  }, [])
-
-  if (books.length === 0) return null
-
-  return (
-    <div className="read-next-section">
-      <div className="read-next-header" onClick={() => setCollapsed(c => !c)}>
-        <span>✨ Read Next</span>
-        <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-muted)', marginLeft: 4 }}>
-          ({books.length} suggestions)
-        </span>
-        <span style={{ marginLeft: 'auto', fontSize: 12 }}>{collapsed ? '▾' : '▴'}</span>
-      </div>
-      {!collapsed && (
-        <div className="read-next-scroll">
-          {books.map(book => {
-            const src = coverSrc(book)
-            const init = initials(book.title)
-            return (
-              <div key={book.id} className="read-next-card" onClick={() => onBookClick(book.id)}>
-                {src
-                  ? <img src={src} alt={book.title} />
-                  : <div className="read-next-ph">{init}</div>
-                }
-                <div className="read-next-title">{book.title}</div>
-                <div className="read-next-author">{displayAuthor(book)}</div>
-              </div>
-            )
-          })}
-        </div>
-      )}
-    </div>
-  )
-}
-
 // ── Bulk action bar ───────────────────────────────────────────────────────────
 function BulkBar({ selectedIds, onClear, onAction, toast }) {
   const count = selectedIds.length
@@ -402,7 +356,13 @@ function GroupSection({ name, books, selectedId, selectMode, selectedIds, onChec
 
 // ── Main Library view ─────────────────────────────────────────────────────────
 export default function Library() {
-  const { toast, prefs, setRefreshLibrary, refreshLibrary, openPdfReader, libraryNudges, dismissNudge } = useApp()
+  const {
+    toast, prefs, setRefreshLibrary, refreshLibrary, openPdfReader, libraryNudges, dismissNudge,
+    shelves, activeShelfId, setActiveShelfId, loadShelves,
+  } = useApp()
+  const [continueSeriesBooks, setContinueSeriesBooks] = useState(null) // null = not viewing that shelf
+  const [savingShelf, setSavingShelf]     = useState(false)
+  const [shelfNameInput, setShelfNameInput] = useState('')
   const [books, setBooks]           = useState([])
   const [loading, setLoading]       = useState(true)
   const [search, setSearch]         = useState('')
@@ -447,6 +407,32 @@ export default function Library() {
 
   useEffect(() => { loadBooks() }, [loadBooks])
   useEffect(() => { setRefreshLibrary(loadBooks) }, [loadBooks, setRefreshLibrary])
+
+  // Smart shelves: the pinned "Continue the Series" pseudo-shelf is a curated
+  // book list fetched fresh each time (not a filter), everything else is a
+  // saved filter combo re-applied to the normal filter state. Guarded by a ref
+  // so this only fires when activeShelfId itself changes — `shelves` is only a
+  // dependency to pick up a shelf's filters once it's loaded, and refreshing
+  // it (e.g. right after saving a new one) must not reset the current view.
+  const prevShelfIdRef = useRef(undefined)
+  useEffect(() => {
+    if (prevShelfIdRef.current === activeShelfId) return
+    prevShelfIdRef.current = activeShelfId
+
+    if (activeShelfId === CONTINUE_SERIES_SHELF_ID) {
+      setContinueSeriesBooks(null)
+      fetch(`${API}/continue-series`).then(r => r.json()).then(setContinueSeriesBooks).catch(() => setContinueSeriesBooks([]))
+      return
+    }
+    setContinueSeriesBooks(null)
+    const shelf = activeShelfId ? shelves.find(s => s.id === activeShelfId) : null
+    const f = shelf?.filters || {}
+    setFilters({ status: f.status || '', language: f.language || '', format: f.format || '' })
+    setAuthorFilter(f.author || '')
+    setSeriesFilter(f.series || '')
+    setTagFilter(f.tag || '')
+    setSearch('')
+  }, [activeShelfId, shelves])
 
   useEffect(() => {
     fetch(`${API}/meta/authors`).then(r => r.json()).then(setAuthors).catch(() => {})
@@ -610,6 +596,35 @@ export default function Library() {
 
   const hasFilters = Object.values(filters).some(Boolean) || authorFilter || seriesFilter || tagFilter
 
+  const saveShelf = async () => {
+    const name = shelfNameInput.trim()
+    if (!name) return
+    await fetch(`${API}/smart-shelves`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name,
+        filters: { ...filters, author: authorFilter, series: seriesFilter, tag: tagFilter },
+      }),
+    })
+    setShelfNameInput('')
+    setSavingShelf(false)
+    toast(`Smart shelf "${name}" saved`, 'success')
+    loadShelves()
+  }
+
+  const deleteActiveShelf = async () => {
+    if (!activeShelfId || activeShelfId === CONTINUE_SERIES_SHELF_ID) return
+    await fetch(`${API}/smart-shelves/${activeShelfId}`, { method: 'DELETE' })
+    setActiveShelfId(null)
+    loadShelves()
+    toast('Smart shelf deleted', 'success')
+  }
+
+  const activeShelfName = activeShelfId === CONTINUE_SERIES_SHELF_ID
+    ? '📖 Continue the Series'
+    : shelves.find(s => s.id === activeShelfId)?.name
+
   const handleStatusChange = (id, status) =>
     setBooks(bs => bs.map(b => b.id === id ? { ...b, read_status: status } : b))
 
@@ -706,7 +721,7 @@ export default function Library() {
             onChange={e => setSearch(e.target.value)}
           />
         </div>
-        {(view === 'grid' || view === 'list') && (
+        {activeShelfId !== CONTINUE_SERIES_SHELF_ID && (view === 'grid' || view === 'list') && (
           <select
             className="btn btn-ghost"
             style={{ fontWeight: 400, fontSize: 13 }}
@@ -716,26 +731,30 @@ export default function Library() {
             {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         )}
-        <button
-          className={`btn ${selectMode ? 'btn-primary' : 'btn-ghost'}`}
-          style={{ fontSize: 12, padding: '6px 12px' }}
-          onClick={toggleSelectMode}
-          title="Bulk select"
-        >
-          ☑ Select
-        </button>
+        {activeShelfId !== CONTINUE_SERIES_SHELF_ID && (
+          <button
+            className={`btn ${selectMode ? 'btn-primary' : 'btn-ghost'}`}
+            style={{ fontSize: 12, padding: '6px 12px' }}
+            onClick={toggleSelectMode}
+            title="Bulk select"
+          >
+            ☑ Select
+          </button>
+        )}
         <button
           className="btn btn-ghost"
           style={{ fontSize: 16, padding: '4px 8px' }}
           onClick={loadBooks}
           title="Reload library"
         >↻</button>
-        <div className="view-toggle">
-          <button className={view === 'grid'      ? 'active' : ''} onClick={() => saveView('grid')}      title="Grid">▦</button>
-          <button className={view === 'list'      ? 'active' : ''} onClick={() => saveView('list')}      title="List">☰</button>
-          <button className={view === 'by-author' ? 'active' : ''} onClick={() => saveView('by-author')} title="By Author">A</button>
-          <button className={view === 'by-series' ? 'active' : ''} onClick={() => saveView('by-series')} title="By Series">#</button>
-        </div>
+        {activeShelfId !== CONTINUE_SERIES_SHELF_ID && (
+          <div className="view-toggle">
+            <button className={view === 'grid'      ? 'active' : ''} onClick={() => saveView('grid')}      title="Grid">▦</button>
+            <button className={view === 'list'      ? 'active' : ''} onClick={() => saveView('list')}      title="List">☰</button>
+            <button className={view === 'by-author' ? 'active' : ''} onClick={() => saveView('by-author')} title="By Author">A</button>
+            <button className={view === 'by-series' ? 'active' : ''} onClick={() => saveView('by-series')} title="By Series">#</button>
+          </div>
+        )}
       </div>
 
       {/* Enrich progress banner — hidden unless actively running/done, or nudged
@@ -783,7 +802,19 @@ export default function Library() {
         />
       )}
 
+      {/* Active smart shelf indicator */}
+      {activeShelfId && (
+        <div className="filter-bar" style={{ paddingBottom: 8 }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--rose-deep)' }}>{activeShelfName}</span>
+          <button className="filter-chip" onClick={() => setActiveShelfId(null)}>✕ Exit shelf</button>
+          {activeShelfId !== CONTINUE_SERIES_SHELF_ID && (
+            <button className="filter-chip" style={{ color: '#c04040' }} onClick={deleteActiveShelf}>🗑️ Delete shelf</button>
+          )}
+        </div>
+      )}
+
       {/* Filter chips */}
+      {continueSeriesBooks === null && (
       <div className="filter-bar">
         {STATUS_FILTERS.map(f => (
           <button
@@ -856,15 +887,56 @@ export default function Library() {
             ✕ Clear
           </button>
         )}
+        {hasFilters && !savingShelf && (
+          <button className="filter-chip" onClick={() => setSavingShelf(true)}>
+            💾 Save as Shelf
+          </button>
+        )}
       </div>
+      )}
 
-      {/* Read Next */}
-      <ReadNextSection onBookClick={id => setSelectedId(id)} />
+      {savingShelf && (
+        <div className="filter-bar" style={{ paddingTop: 0 }}>
+          <input
+            className="pref-input"
+            style={{ marginBottom: 0, maxWidth: 220 }}
+            placeholder="Shelf name…"
+            value={shelfNameInput}
+            autoFocus
+            onChange={e => setShelfNameInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') saveShelf(); if (e.key === 'Escape') setSavingShelf(false) }}
+          />
+          <button className="btn btn-secondary" onClick={saveShelf} disabled={!shelfNameInput.trim()}>Save</button>
+          <button className="btn btn-ghost" onClick={() => { setSavingShelf(false); setShelfNameInput('') }}>Cancel</button>
+        </div>
+      )}
 
       {/* Books */}
       <div className="library-body">
         <div className="books-area">
-          {loading ? (
+          {activeShelfId === CONTINUE_SERIES_SHELF_ID ? (
+            continueSeriesBooks === null ? (
+              <div className="empty-state">
+                <div className="spin" style={{ fontSize: 32 }}>↻</div>
+                <p>Looking for series in progress…</p>
+              </div>
+            ) : continueSeriesBooks.length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-icon">📖</div>
+                <h3>Nothing to continue yet</h3>
+                <p>Finish a book that's part of a series, and the next one shows up here.</p>
+              </div>
+            ) : (
+              <>
+                <div className="results-count">{continueSeriesBooks.length} book{continueSeriesBooks.length !== 1 ? 's' : ''}</div>
+                <div className="books-grid">
+                  {continueSeriesBooks.map(book => (
+                    <BookCard key={book.id} book={book} selected={selectedId === book.id} onClick={b => setSelectedId(b.id === selectedId ? null : b.id)} />
+                  ))}
+                </div>
+              </>
+            )
+          ) : loading ? (
             <div className="empty-state">
               <div className="spin" style={{ fontSize: 32 }}>↻</div>
               <p>Loading your library…</p>

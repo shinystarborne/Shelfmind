@@ -588,13 +588,6 @@ function startServer(port = 3001) {
       res.json({ ok: true, deleted, freedBytes, errors })
     })
 
-    // ── Recommendations ────────────────────────────────────────────────────────
-
-    app.get('/api/recommendations', (req, res) => {
-      const limit = parseInt(req.query.limit) || 5
-      res.json(store.getRecommendations(limit))
-    })
-
     // ── Meta (dropdowns) ───────────────────────────────────────────────────────
 
     app.get('/api/meta/authors', (_, res) => res.json(store.getAuthors()))
@@ -847,6 +840,31 @@ function startServer(port = 3001) {
       if (!store.removePdfFromList(req.params.id, req.params.docId)) return res.status(404).json({ error: 'List not found' })
       res.json({ ok: true })
     })
+
+    // ── Smart Shelves ────────────────────────────────────────────────────────────
+
+    app.get('/api/smart-shelves', (_, res) => res.json(store.getSmartShelves()))
+
+    app.post('/api/smart-shelves', (req, res) => {
+      const { name, filters } = req.body
+      if (!name?.trim()) return res.status(400).json({ error: 'name required' })
+      res.json(store.createSmartShelf(name.trim(), filters || {}))
+    })
+
+    app.put('/api/smart-shelves/:id', (req, res) => {
+      const shelf = store.updateSmartShelf(req.params.id, req.body)
+      if (!shelf) return res.status(404).json({ error: 'Not found' })
+      res.json(shelf)
+    })
+
+    app.delete('/api/smart-shelves/:id', (req, res) => {
+      if (!store.deleteSmartShelf(req.params.id)) return res.status(404).json({ error: 'Not found' })
+      res.json({ ok: true })
+    })
+
+    // Pinned, always-present pseudo-shelf: not user-created, computed fresh from
+    // series/read-status every time rather than saved filter criteria.
+    app.get('/api/continue-series', (_, res) => res.json(store.getContinueSeriesBooks()))
 
     // ── PDF Tabs ───────────────────────────────────────────────────────────────
 

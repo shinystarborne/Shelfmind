@@ -107,11 +107,13 @@ class Store {
     this._pdfTabsFile = path.join(dataDir, 'pdfTabs.json')
     this._pdfDocsFile = path.join(dataDir, 'pdfDocs.json')
     this._highlightsFile = path.join(dataDir, 'highlights.json')
+    this._smartShelvesFile = path.join(dataDir, 'smartShelves.json')
 
     this.books   = readJson(this._booksFile,   [])
     this.states  = readJson(this._statesFile,  {})
     this.prefs   = readJson(this._prefsFile,   {})
     this.lists   = readJson(this._listsFile,   [])
+    this.smartShelves = readJson(this._smartShelvesFile, [])
     this.pdfTabs = readJson(this._pdfTabsFile, [])
     this.pdfDocs = readJson(this._pdfDocsFile, [])
     this.highlights = readJson(this._highlightsFile, {})   // bookId → [highlight]
@@ -571,42 +573,33 @@ class Store {
   }
 
   // ── Recommendations ───────────────────────────────────────────────────────────
-  getRecommendations(limit = 5) {
-    const allBooks   = this.books.filter(b => !b.removed)
-    const unread     = allBooks.filter(b => {
-      const s = this.states[b.id]?.status
-      return !s || s === 'unread'
-    })
+  // For every series with at least one book marked "read", find the next book
+  // by series_num that isn't already read — i.e. what to pick up to continue
+  // a series you're partway through. Series you haven't started at all don't
+  // show up here (nothing to "continue" yet).
+  getContinueSeriesBooks() {
+    const bySeries = new Map()
+    for (const b of this.books) {
+      if (b.removed || !b.series_name) continue
+      if (!bySeries.has(b.series_name)) bySeries.set(b.series_name, [])
+      bySeries.get(b.series_name).push(b)
+    }
 
-    // Get last 10 read books (by finished_at or updated_at desc)
-    const read = allBooks
-      .filter(b => this.states[b.id]?.status === 'read')
-      .sort((a, b) => {
-        const fa = this.states[a.id]?.finished_at || this.states[a.id]?.updated_at || 0
-        const fb = this.states[b.id]?.finished_at || this.states[b.id]?.updated_at || 0
-        return fb - fa
+    const results = []
+    for (const seriesBooks of bySeries.values()) {
+      const sorted = [...seriesBooks].sort((a, b) => {
+        const na = a.series_num ?? Infinity, nb = b.series_num ?? Infinity
+        if (na !== nb) return na - nb
+        return (a.title || '').localeCompare(b.title || '')
       })
-      .slice(0, 10)
+      let lastReadIdx = -1
+      sorted.forEach((b, i) => { if (this.states[b.id]?.status === 'read') lastReadIdx = i })
+      if (lastReadIdx === -1) continue // haven't started this series
 
-    const recentAuthors  = new Set(read.map(b => b.author_canonical || b.author).filter(Boolean))
-    const recentSubjects = new Set(read.flatMap(b => b.subjects || []).map(s => s.toLowerCase()))
-    const seriesWithRead = new Set()
-    for (const b of read) { if (b.series_name) seriesWithRead.add(b.series_name) }
-
-    const scored = unread.map(b => {
-      let score = 0
-      const author = b.author_canonical || b.author
-      if (author && recentAuthors.has(author)) score += 3
-      const subjects = (b.subjects || []).map(s => s.toLowerCase())
-      for (const s of subjects) { if (recentSubjects.has(s)) score += 1 }
-      if (b.series_name && seriesWithRead.has(b.series_name)) score += 1
-      // Slight random shuffle within same score
-      score += Math.random() * 0.5
-      return { book: this._attachState(b), score }
-    })
-
-    scored.sort((a, b) => b.score - a.score)
-    return scored.slice(0, limit).map(s => s.book)
+      const next = sorted.slice(lastReadIdx + 1).find(b => (this.states[b.id]?.status || 'unread') === 'unread')
+      if (next) results.push(this._attachState(next))
+    }
+    return results
   }
 
   // ── Prefs ───────────────────────────────────────────────────────────────────
@@ -895,6 +888,39 @@ class Store {
     if (idx === -1) return false
     this.lists.splice(idx, 1)
     writeJson(this._listsFile, this.lists)
+    return true
+  }
+
+  // ── Smart shelves ────────────────────────────────────────────────────────────
+  // Saved dynamic filters (status/language/format/author/series/tag) — unlike
+  // reading lists, they hold no book memberships, just the filter criteria to
+  // re-apply against the live library.
+  getSmartShelves() {
+    return [...this.smartShelves]
+  }
+
+  createSmartShelf(name, filters) {
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2)
+    const shelf = { id, name, filters: filters || {}, created_at: Math.floor(Date.now() / 1000) }
+    this.smartShelves.push(shelf)
+    writeJson(this._smartShelvesFile, this.smartShelves)
+    return shelf
+  }
+
+  updateSmartShelf(id, fields) {
+    const s = this.smartShelves.find(s => s.id === id)
+    if (!s) return null
+    if (fields.name    !== undefined) s.name    = fields.name
+    if (fields.filters !== undefined) s.filters = fields.filters
+    writeJson(this._smartShelvesFile, this.smartShelves)
+    return s
+  }
+
+  deleteSmartShelf(id) {
+    const idx = this.smartShelves.findIndex(s => s.id === id)
+    if (idx === -1) return false
+    this.smartShelves.splice(idx, 1)
+    writeJson(this._smartShelvesFile, this.smartShelves)
     return true
   }
 
