@@ -5,6 +5,7 @@ const os      = require('os')
 const fs      = require('fs')
 const { getStore }   = require('./db')
 const { scan, parseEpub, getEpubImages } = require('./scanner')
+const { startWatching } = require('./watcher')
 const { enrichAll, enrichOne } = require('./enricher')
 const { writeEpubMeta } = require('./epubWriter')
 const { indexAll, extractBookText, extractPdfText } = require('./searchIndexer')
@@ -379,11 +380,10 @@ function startServer(port = 3001) {
 
     // ── Scan ───────────────────────────────────────────────────────────────────
 
-    app.post('/api/scan', async (req, res) => {
-      if (scanState.running) return res.json({ ok: false, message: 'Already scanning' })
+    function runScan() {
+      if (scanState.running) return
       const libraryPath = store.getPref('library_path') || 'E:\\Books'
       scanState = { running: true, current: 0, total: 0, added: 0, done: false, error: null }
-      res.json({ ok: true })
 
       scan(store, libraryPath, progress => {
         scanState.current = progress.current
@@ -392,9 +392,19 @@ function startServer(port = 3001) {
       })
         .then(result => { scanState = { ...result, running: false, done: true, error: null } })
         .catch(err  => { scanState = { ...scanState, running: false, done: true, error: err.message } })
+    }
+
+    app.post('/api/scan', async (req, res) => {
+      if (scanState.running) return res.json({ ok: false, message: 'Already scanning' })
+      runScan()
+      res.json({ ok: true })
     })
 
     app.get('/api/scan/status', (_, res) => res.json(scanState))
+
+    // Auto-rescan whenever the library folder changes on disk (new/removed/edited
+    // files), so users don't have to remember to click "Scan Library".
+    startWatching(store.getPref('library_path') || 'E:\\Books', runScan)
 
     // ── Enrich ─────────────────────────────────────────────────────────────────
 
@@ -498,6 +508,7 @@ function startServer(port = 3001) {
       const update  = {}
       for (const k of allowed) { if (k in req.body) update[k] = req.body[k] }
       store.setPrefs(update)
+      if ('library_path' in update) startWatching(update.library_path || 'E:\\Books', runScan)
       res.json(store.getPrefs())
     })
 
