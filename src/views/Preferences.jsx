@@ -463,8 +463,16 @@ function UpdaterSection() {
   )
 }
 
+const PREFS_TABS = [
+  { id: 'general',       icon: '⚙️', label: 'General' },
+  { id: 'library-tools', icon: '🛠️', label: 'Library Tools' },
+  { id: 'data',          icon: '📦', label: 'Data' },
+  { id: 'updates',       icon: '⬆️', label: 'Updates' },
+]
+
 export default function Preferences({ onSave }) {
   const { toast } = useApp()
+  const [tab, setTab] = useState('general')
   const [prefs, setPrefs] = useState({})
   const [qr, setQr] = useState(null)
   const [saving, setSaving] = useState(false)
@@ -544,7 +552,20 @@ export default function Preferences({ onSave }) {
         <div className="topbar-title">Preferences</div>
       </div>
 
+      <div className="prefs-tabs">
+        {PREFS_TABS.map(t => (
+          <button
+            key={t.id}
+            className={`prefs-tab ${tab === t.id ? 'active' : ''}`}
+            onClick={() => setTab(t.id)}
+          >
+            {t.icon} {t.label}
+          </button>
+        ))}
+      </div>
+
       <div className="prefs-body">
+      {tab === 'general' && (<>
         {/* Library */}
         <div className="prefs-section">
           <h3>📚 Library</h3>
@@ -557,40 +578,6 @@ export default function Preferences({ onSave }) {
               onChange={e => set('library_path', e.target.value)}
               placeholder="E:\Books"
             />
-          </div>
-        </div>
-
-        {/* Kindle */}
-        <div className="prefs-section">
-          <h3>📱 Kindle</h3>
-          <div className="pref-row">
-            <div className="pref-label">Kindle Email</div>
-            <div className="pref-hint">Your @kindle.com email address (optional — enables email delivery mode)</div>
-            <input
-              className="pref-input"
-              type="email"
-              value={prefs.kindle_email || ''}
-              onChange={e => set('kindle_email', e.target.value)}
-              placeholder="yourname@kindle.com"
-            />
-          </div>
-          <div className="pref-row">
-            <div className="pref-label">Default Delivery Mode</div>
-            <div className="pref-radio-group">
-              {[
-                { value: 'web',   label: '🌐 Send to Kindle Web' },
-                { value: 'email', label: '✉️ Email Attachment' },
-              ].map(opt => (
-                <label key={opt.value} className={`pref-radio ${prefs.kindle_mode === opt.value ? 'active' : ''}`}>
-                  <input
-                    type="radio"
-                    checked={prefs.kindle_mode === opt.value}
-                    onChange={() => set('kindle_mode', opt.value)}
-                  />
-                  {opt.label}
-                </label>
-              ))}
-            </div>
           </div>
         </div>
 
@@ -617,6 +604,32 @@ export default function Preferences({ onSave }) {
           </div>
         </div>
 
+        {/* Mobile / QR */}
+        <div className="prefs-section">
+          <h3>📲 Mobile Access</h3>
+          <p style={{ fontSize: 13, color: 'var(--text-soft)', marginBottom: 16, lineHeight: 1.6 }}>
+            Open ShelfMind on any device on your local network by scanning the QR code.
+          </p>
+          {!qr ? (
+            <button className="btn btn-secondary" onClick={loadQr}>Generate QR Code</button>
+          ) : (
+            <div className="qr-wrap">
+              <img src={qr.qr} alt="QR code" width={120} height={120} />
+              <div>
+                <div className="qr-url">{qr.url}</div>
+                <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8 }}>
+                  Scan with your phone's camera. Works on the same Wi-Fi network.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Keyboard shortcuts */}
+        <ShortcutsSection />
+      </>)}
+
+      {tab === 'library-tools' && (<>
         {/* Metadata */}
         <div className="prefs-section">
           <h3>🔍 Metadata Enrichment</h3>
@@ -697,51 +710,66 @@ export default function Preferences({ onSave }) {
           </button>
         </div>
 
-        {showLibImport && (
-          <LibraryImportModal
-            toast={toast}
-            onClose={() => setShowLibImport(false)}
-          />
-        )}
-
-        {/* Keyboard shortcuts */}
-        <ShortcutsSection />
-
         {/* PDF Tabs */}
         <PdfTabsSection />
 
         {/* Removed files cleanup */}
         <RemovedFolderSection />
+      </>)}
+
+      {tab === 'data' && (<>
+        {/* Kindle */}
+        <div className="prefs-section">
+          <h3>📱 Kindle</h3>
+          <div className="pref-row">
+            <div className="pref-label">Kindle Email</div>
+            <div className="pref-hint">Your @kindle.com email address (optional — enables email delivery mode)</div>
+            <input
+              className="pref-input"
+              type="email"
+              value={prefs.kindle_email || ''}
+              onChange={e => set('kindle_email', e.target.value)}
+              placeholder="yourname@kindle.com"
+            />
+          </div>
+          <div className="pref-row">
+            <div className="pref-label">Default Delivery Mode</div>
+            <div className="pref-radio-group">
+              {[
+                { value: 'web',   label: '🌐 Send to Kindle Web' },
+                { value: 'email', label: '✉️ Email Attachment' },
+              ].map(opt => (
+                <label key={opt.value} className={`pref-radio ${prefs.kindle_mode === opt.value ? 'active' : ''}`}>
+                  <input
+                    type="radio"
+                    checked={prefs.kindle_mode === opt.value}
+                    onChange={() => set('kindle_mode', opt.value)}
+                  />
+                  {opt.label}
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
 
         {/* Export */}
         <ExportSection />
 
         {/* Backup & Restore */}
         <BackupSection />
+      </>)}
 
+      {tab === 'updates' && (<>
         {/* Updates */}
         <UpdaterSection />
+      </>)}
 
-        {/* Mobile / QR */}
-        <div className="prefs-section">
-          <h3>📲 Mobile Access</h3>
-          <p style={{ fontSize: 13, color: 'var(--text-soft)', marginBottom: 16, lineHeight: 1.6 }}>
-            Open ShelfMind on any device on your local network by scanning the QR code.
-          </p>
-          {!qr ? (
-            <button className="btn btn-secondary" onClick={loadQr}>Generate QR Code</button>
-          ) : (
-            <div className="qr-wrap">
-              <img src={qr.qr} alt="QR code" width={120} height={120} />
-              <div>
-                <div className="qr-url">{qr.url}</div>
-                <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8 }}>
-                  Scan with your phone's camera. Works on the same Wi-Fi network.
-                </p>
-              </div>
-            </div>
-          )}
-        </div>
+      {showLibImport && (
+        <LibraryImportModal
+          toast={toast}
+          onClose={() => setShowLibImport(false)}
+        />
+      )}
 
         <div style={{ height: 32 }} />
       </div>

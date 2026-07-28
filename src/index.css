@@ -892,6 +892,31 @@ h3 { font-size: 18px; }
 .series-bar-fill.read { background: linear-gradient(to right, var(--sage), var(--sage-dark)); }
 
 /* ── Preferences ─────────────────────────────────────────────────────────── */
+.prefs-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 12px 32px;
+  border-bottom: 1px solid var(--border-soft);
+  flex-shrink: 0;
+}
+.prefs-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  color: var(--text-soft);
+  font-size: 13px;
+  font-weight: 600;
+  transition: all 0.15s;
+  border: none;
+  background: none;
+}
+.prefs-tab:hover { background: var(--border-soft); color: var(--text); }
+.prefs-tab.active { background: var(--rose); color: var(--brown); }
+
 .prefs-body {
   flex: 1;
   overflow-y: auto;
@@ -1473,6 +1498,7 @@ h3 { font-size: 18px; }
 .main-content { padding-bottom: 64px; }
 .books-area { padding: 8px; }
 .topbar { padding: 10px 12px; gap: 8px; }
+.prefs-tabs { padding: 8px 12px; }
 .prefs-body { padding: 12px; }
 .prefs-section { padding: 16px; margin-bottom: 12px; }
 .pref-input { width: 100%; box-sizing: border-box; }
@@ -1512,6 +1538,7 @@ h3 { font-size: 18px; }
   .main-content { padding-bottom: 0; }
   .books-area { padding: 24px; }
   .topbar { padding: 14px 24px 12px; gap: 12px; }
+  .prefs-tabs { padding: 12px 32px; }
   .prefs-body { padding: 32px; }
   .prefs-section { padding: 24px; margin-bottom: 20px; }
   .pref-input { width: auto; }
