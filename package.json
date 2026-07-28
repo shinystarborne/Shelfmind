@@ -8,7 +8,8 @@
     "dev": "concurrently -k \"vite\" \"wait-on http://localhost:5173 && cross-env NODE_ENV=development electron .\"",
     "build": "vite build",
     "dist": "npm run build && electron-builder",
-    "release": "npm run build && electron-builder --publish always"
+    "release": "npm run build && electron-builder --publish always",
+    "release:beta": "npm run build && electron-builder --publish always -c.publish.releaseType=prerelease -c.publish.channel=beta"
   },
   "dependencies": {
     "adm-zip": "^0.5.10",

@@ -250,18 +250,22 @@ function ShortcutsSection() {
   )
 }
 
+const isPrerelease = (v) => !!v && v.includes('-')
+
 function UpdaterSection() {
   const [version, setVersion]     = useState('')
   const [status, setStatus]       = useState('idle')
   const [updateInfo, setUpdateInfo] = useState(null)
   const [progress, setProgress]   = useState(0)
   const [errorMsg, setErrorMsg]   = useState('')
+  const [betaUpdates, setBetaUpdates] = useState(false)
 
   const api = window.electronAPI
 
   useEffect(() => {
     if (!api) return
     api.getAppVersion().then(setVersion)
+    fetch(`${API}/preferences`).then(r => r.json()).then(p => setBetaUpdates(!!p.beta_updates)).catch(() => {})
     api.onUpdateAvailable(info  => { setUpdateInfo(info); setStatus('available') })
     api.onUpdateNotAvailable(()  => setStatus('up-to-date'))
     api.onUpdateProgress(p       => { setProgress(Math.round(p.percent)); setStatus('downloading') })
@@ -272,11 +276,20 @@ function UpdaterSection() {
 
   if (!api) return null
 
+  const toggleBeta = async (checked) => {
+    setBetaUpdates(checked)
+    await fetch(`${API}/preferences`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ beta_updates: checked }),
+    })
+  }
+
   const check = async () => {
     setStatus('checking')
     setErrorMsg('')
     try {
-      await api.checkForUpdates()
+      await api.checkForUpdates({ beta: betaUpdates })
     } catch (err) {
       const msg = err.message || ''
       if (msg.includes('No published versions') || msg.includes('Unable to find latest') || msg.includes('Cannot parse')) {
@@ -301,7 +314,22 @@ function UpdaterSection() {
       <h3>⬆️ Updates</h3>
       <div className="pref-row" style={{ marginBottom: 16 }}>
         <div className="pref-label">Current version</div>
-        <div className="pref-hint">v{version}</div>
+        <div className="pref-hint">v{version}{isPrerelease(version) ? ' (beta)' : ''}</div>
+      </div>
+
+      <div className="pref-row" style={{ marginBottom: 16 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={betaUpdates}
+            onChange={e => toggleBeta(e.target.checked)}
+            style={{ accentColor: 'var(--rose)' }}
+          />
+          <span className="pref-label" style={{ margin: 0 }}>Include beta releases</span>
+        </label>
+        <div className="pref-hint">
+          Get early access to new features before they're stable. Uncheck this and check again to move back to the latest stable release.
+        </div>
       </div>
 
       {status === 'idle' && (
@@ -321,7 +349,9 @@ function UpdaterSection() {
       {status === 'available' && (
         <div>
           <p style={{ fontSize: 13, color: 'var(--text-soft)', marginBottom: 8 }}>
-            v{updateInfo?.version} is available.
+            {!isPrerelease(updateInfo?.version) && isPrerelease(version)
+              ? `v${updateInfo?.version} (stable) is available — this will move you back off the beta channel.`
+              : `v${updateInfo?.version}${isPrerelease(updateInfo?.version) ? ' (beta)' : ''} is available.`}
           </p>
           <button className="btn btn-primary" onClick={() => { api.downloadUpdate(); setStatus('downloading') }}>
             Download Update
