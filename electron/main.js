@@ -79,7 +79,12 @@ app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow()
 })
 
-ipcMain.handle('updater-check',    () => autoUpdater?.checkForUpdates())
+ipcMain.handle('updater-check', (_, opts = {}) => {
+  if (!autoUpdater) return
+  autoUpdater.allowPrerelease = !!opts.beta
+  autoUpdater.allowDowngrade = true
+  return autoUpdater.checkForUpdates()
+})
 ipcMain.handle('updater-download', () => autoUpdater?.downloadUpdate())
 ipcMain.handle('updater-install',  () => autoUpdater?.quitAndInstall(false, true))
 

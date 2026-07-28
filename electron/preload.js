@@ -13,7 +13,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   isElectron: true,
 
   // Updater
-  checkForUpdates:  () => ipcRenderer.invoke('updater-check'),
+  checkForUpdates:  (opts) => ipcRenderer.invoke('updater-check', opts),
   downloadUpdate:   () => ipcRenderer.invoke('updater-download'),
   installUpdate:    () => ipcRenderer.invoke('updater-install'),
   onUpdateAvailable:    (cb) => ipcRenderer.on('update-available',     (_, info)     => cb(info)),
