@@ -203,6 +203,7 @@ export default function Reader({ book, target, onClose }) {
   const [settings, setSettings]   = useState(loadSettings)
   const [tocOpen, setTocOpen]     = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [chrome, setChrome]       = useState(true)
   const [loading, setLoading]     = useState(true)
   const [error, setError]         = useState(null)
@@ -251,9 +252,9 @@ export default function Reader({ book, target, onClose }) {
 
   // Keep chrome up while a panel is open
   useEffect(() => {
-    if (tocOpen || settingsOpen) { setChrome(true); clearTimeout(chromeTimer.current) }
+    if (tocOpen || settingsOpen || shortcutsOpen) { setChrome(true); clearTimeout(chromeTimer.current) }
     else pokeChrome()
-  }, [tocOpen, settingsOpen, pokeChrome])
+  }, [tocOpen, settingsOpen, shortcutsOpen, pokeChrome])
 
   // ── Geometry ────────────────────────────────────────────────────────────────
   const geometry = useCallback(() => {
@@ -571,12 +572,13 @@ export default function Reader({ book, target, onClose }) {
     else if (['ArrowRight', 'ArrowDown', 'PageDown', ' '].includes(e.key)) { e.preventDefault(); turnRef.current(1) }
     else if (['ArrowLeft', 'ArrowUp', 'PageUp'].includes(e.key))      { e.preventDefault(); turnRef.current(-1) }
     else if (e.key === 'Escape') {
-      if (searchOpen)        closeSearchRef.current()
-      else if (settingsOpen) setSettingsOpen(false)
-      else if (tocOpen)      setTocOpen(false)
-      else                   closeRef.current()
+      if (searchOpen)         closeSearchRef.current()
+      else if (settingsOpen)  setSettingsOpen(false)
+      else if (shortcutsOpen) setShortcutsOpen(false)
+      else if (tocOpen)       setTocOpen(false)
+      else                    closeRef.current()
     }
-  }, [settingsOpen, tocOpen, searchOpen])
+  }, [settingsOpen, shortcutsOpen, tocOpen, searchOpen])
   const keyHandlerRef = useRef(handleKey)
   keyHandlerRef.current = handleKey
 
@@ -909,14 +911,19 @@ export default function Reader({ book, target, onClose }) {
           >🔎</button>
           <button
             className={`reader-icon-btn ${tocOpen ? 'active' : ''}`}
-            onClick={() => { setTocOpen(o => !o); setSettingsOpen(false) }}
+            onClick={() => { setTocOpen(o => !o); setSettingsOpen(false); setShortcutsOpen(false) }}
             title="Table of contents"
           >☰</button>
           <button
             className={`reader-icon-btn reader-aa ${settingsOpen ? 'active' : ''}`}
-            onClick={() => { setSettingsOpen(o => !o); setTocOpen(false) }}
+            onClick={() => { setSettingsOpen(o => !o); setTocOpen(false); setShortcutsOpen(false) }}
             title="Reading settings"
           >Aa</button>
+          <button
+            className={`reader-icon-btn ${shortcutsOpen ? 'active' : ''}`}
+            onClick={() => { setShortcutsOpen(o => !o); setTocOpen(false); setSettingsOpen(false) }}
+            title="Keyboard shortcuts"
+          >ⓘ</button>
         </div>
       </div>
 
@@ -1033,7 +1040,7 @@ export default function Reader({ book, target, onClose }) {
             value={noteEditor.text}
             placeholder="Add a note…"
             onChange={e => setNoteEditor(n => ({ ...n, text: e.target.value }))}
-            onKeyDown={e => { if (e.key === 'Escape') setNoteEditor(null) }}
+            onKeyDown={e => { e.stopPropagation(); if (e.key === 'Escape') setNoteEditor(null) }}
           />
           <div className="reader-note-actions">
             <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => setNoteEditor(null)}>Cancel</button>
@@ -1121,6 +1128,41 @@ export default function Reader({ book, target, onClose }) {
             <div className="reader-seg">
               {[['auto', 'Auto'], ['single', 'One'], ['double', 'Two']].map(([v, l]) => (
                 <button key={v} className={settings.layout === v ? 'active' : ''} onClick={() => set('layout', v)}>{l}</button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Keyboard shortcuts flyout */}
+      {shortcutsOpen && (
+        <>
+          <div className="reader-panel-dismiss" onClick={() => setShortcutsOpen(false)} />
+          <div className="reader-shortcuts">
+            <div className="reader-panel-title">Keyboard shortcuts</div>
+            <div className="reader-shortcut-list">
+              {[
+                [[['→'], ['↓'], ['Space'], ['PgDn']], 'Next page'],
+                [[['←'], ['↑'], ['PgUp']], 'Previous page'],
+                [[['Ctrl', 'F']], 'Search in book'],
+                [[['Esc']], 'Close panel / back'],
+              ].map(([combos, label], i) => (
+                <div className="reader-shortcut-row" key={i}>
+                  <div className="reader-shortcut-keys">
+                    {combos.map((combo, j) => (
+                      <span key={j}>
+                        {j > 0 && <span className="reader-shortcut-or">/</span>}
+                        {combo.map((k, m) => (
+                          <span key={m}>
+                            {m > 0 && <span className="reader-shortcut-plus">+</span>}
+                            <kbd className="reader-kbd">{k}</kbd>
+                          </span>
+                        ))}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="reader-shortcut-label">{label}</div>
+                </div>
               ))}
             </div>
           </div>

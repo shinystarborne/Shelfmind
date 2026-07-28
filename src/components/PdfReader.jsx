@@ -104,6 +104,9 @@ export default function PdfReader({ doc: pdfDoc, target, onClose, onOpenAlongsid
   const [siblingPickerOpen, setSiblingPickerOpen] = useState(false)
   const [siblingDocs, setSiblingDocs]              = useState([])
 
+  // ── Keyboard shortcuts help flyout ──
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
+
   const containerRef = useRef(null)
   const docRef       = useRef(null)     // pdfjs document
   const pageElsRef   = useRef([])       // wrapper divs
@@ -520,6 +523,7 @@ export default function PdfReader({ doc: pdfDoc, target, onClose, onOpenAlongsid
       if (!activeRef.current) return   // split view: only the hovered/focused pane reacts to shortcuts
       if (pinModeRef.current && e.key === 'Escape') { cancelPinModeRef.current(); return }
       if (searchOpen && e.key === 'Escape') { closeSearchRef.current(); return }
+      if (shortcutsOpen && e.key === 'Escape') { setShortcutsOpen(false); return }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') { e.preventDefault(); openSearchRef.current(); return }
       if (e.key === 'Escape') closeRef.current()
       else if (e.key === '+' || e.key === '=') zoom(1.15)
@@ -528,7 +532,7 @@ export default function PdfReader({ doc: pdfDoc, target, onClose, onOpenAlongsid
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [zoom, fitWidth, searchOpen])
+  }, [zoom, fitWidth, searchOpen, shortcutsOpen])
 
   const close = useCallback(() => {
     clearTimeout(saveTimer.current)
@@ -583,6 +587,11 @@ export default function PdfReader({ doc: pdfDoc, target, onClose, onOpenAlongsid
           <span className="pdf-zoom-pct">{scale ? `${Math.round(scale * 100)}%` : '…'}</span>
           <button className="reader-icon-btn" onClick={() => zoom(1.15)} title="Zoom in (+)">+</button>
           <button className="reader-icon-btn pdf-fit-btn" onClick={fitWidth} title="Fit width (0)">⇔</button>
+          <button
+            className={`reader-icon-btn ${shortcutsOpen ? 'active' : ''}`}
+            onClick={() => setShortcutsOpen(o => !o)}
+            title="Keyboard shortcuts"
+          >ⓘ</button>
 
           <div className="pdf-pin-tray">
             {pins.map((pin, i) => (
@@ -713,6 +722,43 @@ export default function PdfReader({ doc: pdfDoc, target, onClose, onOpenAlongsid
           onClose={() => togglePin(pin.id)}
         />
       ))}
+
+      {/* Keyboard shortcuts flyout */}
+      {shortcutsOpen && (
+        <>
+          <div className="reader-panel-dismiss" onClick={() => setShortcutsOpen(false)} />
+          <div className="reader-shortcuts">
+            <div className="reader-panel-title">Keyboard shortcuts</div>
+            <div className="reader-shortcut-list">
+              {[
+                [[['Ctrl', 'F']], 'Search in this PDF'],
+                [[['+'], ['=']], 'Zoom in'],
+                [[['-']], 'Zoom out'],
+                [[['0']], 'Fit width'],
+                [[['Ctrl', 'Scroll']], 'Zoom in/out'],
+                [[['Esc']], 'Close panel / back'],
+              ].map(([combos, label], i) => (
+                <div className="reader-shortcut-row" key={i}>
+                  <div className="reader-shortcut-keys">
+                    {combos.map((combo, j) => (
+                      <span key={j}>
+                        {j > 0 && <span className="reader-shortcut-or">/</span>}
+                        {combo.map((k, m) => (
+                          <span key={m}>
+                            {m > 0 && <span className="reader-shortcut-plus">+</span>}
+                            <kbd className="reader-kbd">{k}</kbd>
+                          </span>
+                        ))}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="reader-shortcut-label">{label}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   )
 }

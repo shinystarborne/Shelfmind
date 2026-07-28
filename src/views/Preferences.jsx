@@ -192,6 +192,62 @@ function PdfTabsSection() {
   )
 }
 
+// ── Keyboard shortcuts reference ──────────────────────────────────────────────
+function ShortcutsSection() {
+  const groups = [
+    {
+      title: 'EPUB Reader',
+      rows: [
+        [['→', '↓', 'Space', 'PgDn'], 'Next page'],
+        [['←', '↑', 'PgUp'], 'Previous page'],
+        [['Ctrl+F'], 'Search in book'],
+        [['Esc'], 'Close panel / back'],
+      ],
+    },
+    {
+      title: 'PDF Viewer',
+      rows: [
+        [['Ctrl+F'], 'Search in this PDF'],
+        [['+', '='], 'Zoom in'],
+        [['-'], 'Zoom out'],
+        [['0'], 'Fit width'],
+        [['Ctrl+Scroll'], 'Zoom in/out'],
+        [['Esc'], 'Close panel / back'],
+      ],
+    },
+  ]
+
+  return (
+    <div className="prefs-section">
+      <h3>⌨️ Keyboard Shortcuts</h3>
+      <p style={{ fontSize: 13, color: 'var(--text-soft)', marginBottom: 16, lineHeight: 1.6 }}>
+        Shortcuts active while reading a book or PDF. Also available from the ⓘ button in the reader's topbar.
+        Shortcuts are ignored while typing in a text field (e.g. a note or the search box).
+      </p>
+      <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap' }}>
+        {groups.map(g => (
+          <div key={g.title} style={{ minWidth: 220 }}>
+            <div className="pref-shortcut-group-title">{g.title}</div>
+            {g.rows.map(([keys, label], i) => (
+              <div className="pref-shortcut-row" key={i}>
+                <div className="pref-shortcut-keys">
+                  {keys.map((k, j) => (
+                    <span key={j}>
+                      {j > 0 && <span className="pref-shortcut-or">/</span>}
+                      <kbd className="pref-kbd">{k}</kbd>
+                    </span>
+                  ))}
+                </div>
+                <div className="pref-shortcut-label">{label}</div>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function UpdaterSection() {
   const [version, setVersion]     = useState('')
   const [status, setStatus]       = useState('idle')
@@ -540,6 +596,9 @@ export default function Preferences({ onSave }) {
             onClose={() => setShowLibImport(false)}
           />
         )}
+
+        {/* Keyboard shortcuts */}
+        <ShortcutsSection />
 
         {/* PDF Tabs */}
         <PdfTabsSection />

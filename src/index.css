@@ -922,6 +922,37 @@ h3 { font-size: 18px; }
   color: var(--text);
 }
 .pref-hint { font-size: 11px; color: var(--text-muted); }
+
+.pref-shortcut-group-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+.pref-shortcut-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.pref-shortcut-keys { flex-shrink: 0; }
+.pref-shortcut-or   { margin: 0 5px; color: var(--text-muted); font-size: 11px; }
+.pref-shortcut-label { font-size: 13px; color: var(--text-soft); }
+.pref-kbd {
+  display: inline-block;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.6;
+  padding: 1px 7px;
+  border-radius: 5px;
+  background: var(--border-soft);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
 .pref-input {
   padding: 9px 12px;
   border: 1.5px solid var(--border);
@@ -1894,7 +1925,8 @@ h3 { font-size: 18px; }
 /* Panels */
 .reader-panel-dismiss { position: absolute; inset: 0; z-index: 15; }
 .reader-toc,
-.reader-settings {
+.reader-settings,
+.reader-shortcuts {
   position: absolute;
   z-index: 20;
   background: var(--r-chrome);
@@ -1970,6 +2002,37 @@ h3 { font-size: 18px; }
   color: var(--r-soft);
   margin: 14px 0 6px;
 }
+.reader-shortcuts {
+  top: 54px;
+  right: 12px;
+  width: 300px;
+  border-radius: 14px;
+  padding: 4px 16px 16px;
+}
+.reader-shortcut-list { display: flex; flex-direction: column; gap: 10px; }
+.reader-shortcut-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.reader-shortcut-keys { display: flex; align-items: center; flex-shrink: 0; }
+.reader-shortcut-or   { margin: 0 5px; color: var(--r-soft); font-size: 11px; }
+.reader-shortcut-plus { margin: 0 2px; color: var(--r-soft); font-size: 11px; }
+.reader-shortcut-label { font-size: 12.5px; color: var(--r-fg); text-align: right; }
+.reader-kbd {
+  display: inline-block;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.6;
+  padding: 1px 7px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--r-fg) 10%, transparent);
+  border: 1px solid var(--r-border);
+  color: var(--r-fg);
+}
+
 .reader-theme-row { display: flex; gap: 10px; }
 .reader-theme-swatch {
   flex: 1;
