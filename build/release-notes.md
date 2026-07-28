@@ -1,6 +1,10 @@
 ## Library
-- Watch-folder auto-rescan — the library now notices new, removed, or edited files on disk automatically (debounced ~3s), no need to click "Scan Library".
+- Smart shelves — save a filter combo (status/language/format/author/series/tag) from the Library filter bar and it shows up in the sidebar to jump back to anytime.
+- "Continue the Series" — a pinned shelf that automatically surfaces the next unread book in any series you've started but not finished. Replaces the old "Read Next" suggestions strip.
+- One-click backup/restore — Preferences → Data → download a zip of your reading status, notes, highlights, tags, and lists, or restore from one.
 
-## Updates
-- ShelfMind now quietly checks for updates a few seconds after launch and shows a small banner if one is found (respects the beta-releases preference).
-- Downloaded updates now show a "What's new" modal with the release notes before you restart to install.
+## Preferences
+- Reorganized into tabs (General / Library Tools / Data / Updates) instead of one long scroll.
+
+## Under the hood
+- Watch-folder auto-rescan and the auto-update-check + "what's new" modal from the last beta are still here.
