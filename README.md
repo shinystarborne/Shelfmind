@@ -1,14 +1,21 @@
 # ShelfMind
 
-A personal ebook library manager for Windows. Scan your local EPUB/MOBI/FB2 collection, enrich metadata from Open Library, track reading status, and access your library from any device on the same Wi-Fi.
+A personal ebook and PDF library manager for Windows. Scan your local collection, read EPUB/FB2/DOC/DOCX/PDF files in a built-in reader, enrich metadata from Open Library, track reading status, and access your library from any device on the same Wi-Fi.
 
 ## Features
 
-- **Library scanning** — indexes EPUB, MOBI, and FB2 files; fast incremental re-scans
+- **Library scanning** — indexes EPUB, MOBI, FB2, DOC/DOCX, and PDF files; fast incremental re-scans
+- **Built-in EPUB/FB2/DOC/DOCX reader** — paginated view, table of contents, themes, adjustable font/spacing/columns, and remembered reading position
+- **Built-in PDF viewer** — zoom, remembered position, continuous scroll or one-page-at-a-time swipe mode (trackpad/touch/arrow keys), pinned reference crops, and reading two PDFs side by side
+- **Highlights, notes & quotes** — highlight passages while reading, attach notes, and collect everything in a dedicated Quotes view with JSON export
+- **Search everywhere** — full-text search across your library and inside book/PDF contents, not just titles and authors
+- **Format conversion** — convert between EPUB, FB2, DOC, and DOCX
 - **Metadata enrichment** — fetches cover art, genres, and canonical author names from Open Library
-- **Series & tags** — organise books by series, custom tags, and language
+- **Series, tags & PDF tabs** — organise ebooks by series/custom tags/language, and PDFs into their own tabs
 - **Reading lists** — create and manage custom reading lists
 - **Insights** — reading stats and charts via a dedicated analytics view
+- **Send to Kindle** — deliver books via the Kindle web uploader or email attachment
+- **Duplicate cleanup** — bulk dedupe and a safe `_Removed` staging folder before anything is permanently deleted
 - **Mobile access** — scan the QR code in Preferences to browse your library from a phone or tablet on the same Wi-Fi
 - **Local-only** — all data is stored as plain JSON in `%APPDATA%\ShelfMind\`; no accounts, no cloud
 
@@ -33,7 +40,11 @@ All data lives in `%APPDATA%\ShelfMind\ShelfMind\` as plain JSON — no database
 | `books.json` | Scanned book metadata |
 | `states.json` | Per-book reading status, ratings, notes, tags |
 | `prefs.json` | App preferences (library path, theme, etc.) |
+| `highlights.json` | Highlights and notes from the built-in reader |
+| `lists.json` | Custom reading lists |
+| `pdfDocs.json` / `pdfTabs.json` | PDF library entries, tabs, and pinned reference crops |
 | `covers/` | Cached cover images |
+| `searchtext/` | Extracted full text used for in-library search |
 
 ## Status
 
