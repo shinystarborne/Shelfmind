@@ -16,6 +16,9 @@ const MIN_SCALE = 0.4
 const MAX_SCALE = 4
 const PAGE_GAP  = 18
 
+const VIEWMODE_KEY = 'shelfmind-pdf-viewmode'
+const loadViewMode = () => (localStorage.getItem(VIEWMODE_KEY) === 'swipe' ? 'swipe' : 'scroll')
+
 // ── Search highlighting on a rendered page's live TextLayer ──────────────────
 // textDivs/textContentItemsStr are index-aligned (pdf.js pushes to both together
 // per text item), so we can join the strings to search, then map an occurrence's
@@ -78,6 +81,9 @@ export default function PdfReader({ doc: pdfDoc, target, onClose, onOpenAlongsid
   const [scale, setScale]       = useState(null)   // null until fit-width computed
   const [curPage, setCurPage]   = useState(1)
   const [error, setError]       = useState(null)
+  const [viewMode, setViewMode] = useState(loadViewMode)   // 'scroll' (continuous) | 'swipe' (one page at a time)
+  const viewModeRef = useRef(viewMode)
+  viewModeRef.current = viewMode
 
   // ── Doc metadata fetched independently of the `doc` prop, which is sometimes
   // just a lightweight {id, title} (e.g. from a library search-result jump) ──
@@ -211,6 +217,17 @@ export default function PdfReader({ doc: pdfDoc, target, onClose, onOpenAlongsid
   const renderVisible = useCallback(() => {
     const c = containerRef.current
     if (!c || !scaleRef.current) return
+    if (viewModeRef.current === 'swipe') {
+      const lo = c.scrollLeft - 800
+      const hi = c.scrollLeft + c.clientWidth + 800
+      for (let i = 0; i < pageElsRef.current.length; i++) {
+        const el = pageElsRef.current[i]?.parentElement
+        if (!el) continue
+        if (el.offsetLeft + el.offsetWidth >= lo && el.offsetLeft <= hi) renderPage(i)
+        else if (el.offsetLeft > hi) break
+      }
+      return
+    }
     const lo = c.scrollTop - 800
     const hi = c.scrollTop + c.clientHeight + 800
     for (let i = 0; i < pageElsRef.current.length; i++) {
@@ -236,7 +253,11 @@ export default function PdfReader({ doc: pdfDoc, target, onClose, onOpenAlongsid
     const c = containerRef.current
     if (c && prevScaleRef.current && prevScaleRef.current !== scale) {
       const ratio = scale / prevScaleRef.current
-      c.scrollTop = (c.scrollTop + c.clientHeight / 2) * ratio - c.clientHeight / 2
+      if (viewModeRef.current === 'swipe') {
+        c.scrollLeft = (c.scrollLeft + c.clientWidth / 2) * ratio - c.clientWidth / 2
+      } else {
+        c.scrollTop = (c.scrollTop + c.clientHeight / 2) * ratio - c.clientHeight / 2
+      }
     }
     prevScaleRef.current = scale
   }, [scale])
@@ -254,8 +275,10 @@ export default function PdfReader({ doc: pdfDoc, target, onClose, onOpenAlongsid
       const el = pageElsRef.current[target - 1]?.parentElement
       const c  = containerRef.current
       if (el && c) {
-        c.scrollTop = el.offsetTop - PAGE_GAP
-        if (c.scrollTop > 0 || tries >= 5) {
+        const swipe = viewModeRef.current === 'swipe'
+        if (swipe) c.scrollLeft = el.offsetLeft - PAGE_GAP
+        else        c.scrollTop  = el.offsetTop - PAGE_GAP
+        if ((swipe ? c.scrollLeft : c.scrollTop) > 0 || tries >= 5) {
           restoredRef.current = true
           curPageRef.current = target
           setCurPage(target)
@@ -287,12 +310,23 @@ export default function PdfReader({ doc: pdfDoc, target, onClose, onOpenAlongsid
   const onScroll = useCallback(() => {
     const c = containerRef.current
     if (!c) return
-    const probe = c.scrollTop + c.clientHeight * 0.4
     let page = 1
-    for (let i = 0; i < pageElsRef.current.length; i++) {
-      const el = pageElsRef.current[i]?.parentElement
-      if (el && el.offsetTop <= probe) page = i + 1
-      else break
+    if (viewModeRef.current === 'swipe') {
+      const probeX = c.scrollLeft + c.clientWidth / 2
+      let bestDist = Infinity
+      for (let i = 0; i < pageElsRef.current.length; i++) {
+        const el = pageElsRef.current[i]?.parentElement
+        if (!el) continue
+        const dist = Math.abs(el.offsetLeft + el.offsetWidth / 2 - probeX)
+        if (dist < bestDist) { bestDist = dist; page = i + 1 }
+      }
+    } else {
+      const probe = c.scrollTop + c.clientHeight * 0.4
+      for (let i = 0; i < pageElsRef.current.length; i++) {
+        const el = pageElsRef.current[i]?.parentElement
+        if (el && el.offsetTop <= probe) page = i + 1
+        else break
+      }
     }
     curPageRef.current = page
     setCurPage(page)
@@ -323,6 +357,59 @@ export default function PdfReader({ doc: pdfDoc, target, onClose, onOpenAlongsid
     setScale(Math.max(MIN_SCALE, Math.min(MAX_SCALE, availW / base)))
   }, [dims, curPage])
 
+  // Fit the whole page (width AND height) in view — used once when switching
+  // into swipe mode so the first page-to-page turn doesn't need vertical
+  // scrolling inside a page.
+  const fitPage = useCallback(() => {
+    const c = containerRef.current
+    if (!c) return
+    const availW = c.clientWidth - 48
+    const availH = c.clientHeight - 48
+    const d = dims[curPage - 1] || dims[0]
+    if (!d) return
+    setScale(Math.max(MIN_SCALE, Math.min(MAX_SCALE, Math.min(availW / d.w, availH / d.h))))
+  }, [dims, curPage])
+
+  // ── Swipe mode: one page at a time, navigated left/right ────────────────────
+  const toggleViewMode = useCallback(() => {
+    setViewMode(m => {
+      const next = m === 'swipe' ? 'scroll' : 'swipe'
+      localStorage.setItem(VIEWMODE_KEY, next)
+      return next
+    })
+  }, [])
+
+  const turnPage = useCallback((dir) => {
+    const total = pageElsRef.current.length
+    const next = Math.min(total, Math.max(1, curPageRef.current + dir))
+    if (next === curPageRef.current) return
+    const el = pageElsRef.current[next - 1]?.parentElement
+    el?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' })
+  }, [])
+
+  // On mode switch: fit the whole page when entering swipe, and in both
+  // directions re-sync scroll position to the page we were just on — the
+  // scroll axis changes (vertical <-> horizontal), so the browser doesn't
+  // carry it over on its own. Deferred a tick so it runs after the
+  // scale/layout change from fitPage has actually reflowed the DOM.
+  const prevViewModeRef = useRef(viewMode)
+  useEffect(() => {
+    if (prevViewModeRef.current === viewMode) return
+    const enteringSwipe = viewMode === 'swipe'
+    const targetPage = curPageRef.current
+    prevViewModeRef.current = viewMode
+    if (enteringSwipe) fitPage()
+    const t = setTimeout(() => {
+      const c = containerRef.current
+      const el = pageElsRef.current[targetPage - 1]?.parentElement
+      if (!c || !el) return
+      if (enteringSwipe) el.scrollIntoView({ behavior: 'auto', inline: 'center', block: 'nearest' })
+      else c.scrollTop = el.offsetTop - PAGE_GAP
+      renderVisibleRef.current()
+    }, 60)
+    return () => clearTimeout(t)
+  }, [viewMode, fitPage])
+
   useEffect(() => {
     const c = containerRef.current
     if (!c) return
@@ -334,6 +421,28 @@ export default function PdfReader({ doc: pdfDoc, target, onClose, onOpenAlongsid
     c.addEventListener('wheel', onWheel, { passive: false })
     return () => c.removeEventListener('wheel', onWheel)
   }, [zoom])
+
+  // Swipe mode: a vertical wheel/trackpad scroll turns the page (mirroring the
+  // EPUB reader's wheel-to-turn behavior); a real horizontal swipe is left to
+  // the browser's native scroll-snap on `.pdf-scroll-swipe`.
+  useEffect(() => {
+    if (viewMode !== 'swipe') return
+    const c = containerRef.current
+    if (!c) return
+    let lastTurn = 0
+    const onWheel = (e) => {
+      if (e.ctrlKey) return   // the zoom handler above owns this
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return   // real horizontal swipe — let it scroll natively
+      if (Math.abs(e.deltaY) < 8) return
+      e.preventDefault()
+      const now = Date.now()
+      if (now - lastTurn < 350) return   // debounce fast wheel bursts / mid-smooth-scroll re-triggers
+      lastTurn = now
+      turnPage(e.deltaY > 0 ? 1 : -1)
+    }
+    c.addEventListener('wheel', onWheel, { passive: false })
+    return () => c.removeEventListener('wheel', onWheel)
+  }, [viewMode, turnPage])
 
   // ── Pinned reference crops ───────────────────────────────────────────────────
   const startPinMode = useCallback(() => {
@@ -488,7 +597,10 @@ export default function PdfReader({ doc: pdfDoc, target, onClose, onOpenAlongsid
     if (layer) highlightQueryOnLayer(layer, searchQuery.trim(), hit.occurrenceIndexOnPage)
     const el = pageElsRef.current[idx]?.parentElement
     const c  = containerRef.current
-    if (el && c) c.scrollTo({ top: el.offsetTop - PAGE_GAP, behavior: 'smooth' })
+    if (el && c) {
+      if (viewModeRef.current === 'swipe') el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' })
+      else c.scrollTo({ top: el.offsetTop - PAGE_GAP, behavior: 'smooth' })
+    }
   }, [renderPage, searchQuery])
 
   // Jump to the current hit whenever it changes (typing, prev/next, or Enter)
@@ -528,11 +640,13 @@ export default function PdfReader({ doc: pdfDoc, target, onClose, onOpenAlongsid
       if (e.key === 'Escape') closeRef.current()
       else if (e.key === '+' || e.key === '=') zoom(1.15)
       else if (e.key === '-')                  zoom(1 / 1.15)
-      else if (e.key === '0')                  fitWidth()
+      else if (e.key === '0')                  (viewModeRef.current === 'swipe' ? fitPage() : fitWidth())
+      else if (viewModeRef.current === 'swipe' && ['ArrowRight', 'ArrowDown', 'PageDown', ' '].includes(e.key)) { e.preventDefault(); turnPage(1) }
+      else if (viewModeRef.current === 'swipe' && ['ArrowLeft', 'ArrowUp', 'PageUp'].includes(e.key))          { e.preventDefault(); turnPage(-1) }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [zoom, fitWidth, searchOpen, shortcutsOpen])
+  }, [zoom, fitWidth, fitPage, searchOpen, shortcutsOpen, turnPage])
 
   const close = useCallback(() => {
     clearTimeout(saveTimer.current)
@@ -586,7 +700,16 @@ export default function PdfReader({ doc: pdfDoc, target, onClose, onOpenAlongsid
           <button className="reader-icon-btn" onClick={() => zoom(1 / 1.15)} title="Zoom out (−)">−</button>
           <span className="pdf-zoom-pct">{scale ? `${Math.round(scale * 100)}%` : '…'}</span>
           <button className="reader-icon-btn" onClick={() => zoom(1.15)} title="Zoom in (+)">+</button>
-          <button className="reader-icon-btn pdf-fit-btn" onClick={fitWidth} title="Fit width (0)">⇔</button>
+          <button
+            className="reader-icon-btn pdf-fit-btn"
+            onClick={() => (viewMode === 'swipe' ? fitPage() : fitWidth())}
+            title={viewMode === 'swipe' ? 'Fit page (0)' : 'Fit width (0)'}
+          >⇔</button>
+          <button
+            className="reader-icon-btn"
+            onClick={toggleViewMode}
+            title={viewMode === 'swipe' ? 'Swipe pages — click for continuous scroll' : 'Continuous scroll — click to swipe pages'}
+          >{viewMode === 'swipe' ? '⬌' : '↕'}</button>
           <button
             className={`reader-icon-btn ${shortcutsOpen ? 'active' : ''}`}
             onClick={() => setShortcutsOpen(o => !o)}
@@ -666,51 +789,59 @@ export default function PdfReader({ doc: pdfDoc, target, onClose, onOpenAlongsid
         </div>
       )}
 
-      <div className="pdf-scroll" ref={containerRef}>
-        <div className="pdf-pages">
-          {scale && dims.map((d, i) => (
-            <div
-              key={i}
-              className="pdf-page"
-              style={{ width: Math.round(d.w * scale), height: Math.round(d.h * scale) }}
-            >
+      <div className="pdf-stage">
+        {viewMode === 'swipe' && (
+          <button className="reader-arrow reader-arrow-left" onClick={() => turnPage(-1)} title="Previous page">‹</button>
+        )}
+        <div className={`pdf-scroll ${viewMode === 'swipe' ? 'pdf-scroll-swipe' : ''}`} ref={containerRef}>
+          <div className="pdf-pages">
+            {scale && dims.map((d, i) => (
               <div
-                className="pdf-page-canvas"
-                data-idx={i}
-                ref={el => { pageElsRef.current[i] = el }}
-              />
-              <div
-                className="pdf-page-text textLayer"
-                ref={el => { textLayerElsRef.current[i] = el }}
-              />
-              <div
-                className={`pdf-pin-draw-layer ${pinMode ? 'active' : ''}`}
-                ref={el => { pageOverlayElsRef.current[i] = el }}
-                onPointerDown={e => onPinPointerDown(e, i)}
-                onPointerMove={onPinPointerMove}
-                onPointerUp={onPinPointerUp}
+                key={i}
+                className="pdf-page"
+                style={{ width: Math.round(d.w * scale), height: Math.round(d.h * scale), '--scale-factor': scale }}
               >
-                {draftSel && draftSel.pageIdx === i && (
-                  <div
-                    className="pdf-pin-draft-rect"
-                    style={{
-                      left:   Math.min(draftSel.x0, draftSel.x1),
-                      top:    Math.min(draftSel.y0, draftSel.y1),
-                      width:  Math.abs(draftSel.x1 - draftSel.x0),
-                      height: Math.abs(draftSel.y1 - draftSel.y0),
-                    }}
-                  />
-                )}
+                <div
+                  className="pdf-page-canvas"
+                  data-idx={i}
+                  ref={el => { pageElsRef.current[i] = el }}
+                />
+                <div
+                  className="pdf-page-text textLayer"
+                  ref={el => { textLayerElsRef.current[i] = el }}
+                />
+                <div
+                  className={`pdf-pin-draw-layer ${pinMode ? 'active' : ''}`}
+                  ref={el => { pageOverlayElsRef.current[i] = el }}
+                  onPointerDown={e => onPinPointerDown(e, i)}
+                  onPointerMove={onPinPointerMove}
+                  onPointerUp={onPinPointerUp}
+                >
+                  {draftSel && draftSel.pageIdx === i && (
+                    <div
+                      className="pdf-pin-draft-rect"
+                      style={{
+                        left:   Math.min(draftSel.x0, draftSel.x1),
+                        top:    Math.min(draftSel.y0, draftSel.y1),
+                        width:  Math.abs(draftSel.x1 - draftSel.x0),
+                        height: Math.abs(draftSel.y1 - draftSel.y0),
+                      }}
+                    />
+                  )}
+                </div>
+                <div className="pdf-page-num">{i + 1}</div>
               </div>
-              <div className="pdf-page-num">{i + 1}</div>
-            </div>
-          ))}
-          {!scale && !error && (
-            <div className="reader-loading" style={{ position: 'static', background: 'transparent', marginTop: 80 }}>
-              <span className="spin">↻</span>
-            </div>
-          )}
+            ))}
+            {!scale && !error && (
+              <div className="reader-loading" style={{ position: 'static', background: 'transparent', marginTop: 80 }}>
+                <span className="spin">↻</span>
+              </div>
+            )}
+          </div>
         </div>
+        {viewMode === 'swipe' && (
+          <button className="reader-arrow reader-arrow-right" onClick={() => turnPage(1)} title="Next page">›</button>
+        )}
       </div>
 
       {pins.filter(p => openPinIds.has(p.id)).map(pin => (
@@ -732,9 +863,13 @@ export default function PdfReader({ doc: pdfDoc, target, onClose, onOpenAlongsid
             <div className="reader-shortcut-list">
               {[
                 [[['Ctrl', 'F']], 'Search in this PDF'],
+                ...(viewMode === 'swipe' ? [
+                  [[['→'], ['↓'], ['Space'], ['PgDn'], ['Scroll ↓']], 'Next page'],
+                  [[['←'], ['↑'], ['PgUp'], ['Scroll ↑']], 'Previous page'],
+                ] : []),
                 [[['+'], ['=']], 'Zoom in'],
                 [[['-']], 'Zoom out'],
-                [[['0']], 'Fit width'],
+                [[['0']], viewMode === 'swipe' ? 'Fit page' : 'Fit width'],
                 [[['Ctrl', 'Scroll']], 'Zoom in/out'],
                 [[['Esc']], 'Close panel / back'],
               ].map(([combos, label], i) => (

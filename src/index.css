@@ -2414,9 +2414,18 @@ h3 { font-size: 18px; }
 }
 .pdf-fit-btn { font-size: 14px; }
 
-.pdf-scroll {
+.pdf-stage {
   flex: 1;
   min-height: 0;   /* flex column: without this the scroll container grows instead of scrolling */
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+.pdf-scroll {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
   overflow: auto;
   overscroll-behavior: contain;
 }
@@ -2428,6 +2437,26 @@ h3 { font-size: 18px; }
   gap: 18px;
   padding: 24px 24px 60px;
   min-width: fit-content;
+}
+
+/* Swipe mode — one page at a time, paged left/right with scroll-snap so a
+   trackpad's horizontal two-finger swipe (or a touch drag) moves natively;
+   a vertical wheel scroll is also translated to a page turn in JS (see
+   PdfReader's wheel handler) to mirror the EPUB reader's wheel-to-turn feel. */
+.pdf-scroll-swipe {
+  overflow-x: auto;
+  overflow-y: auto;
+  scroll-snap-type: x mandatory;
+}
+.pdf-scroll-swipe .pdf-pages {
+  flex-direction: row;
+  align-items: center;
+  height: 100%;
+  min-width: 0;
+  padding: 24px;
+}
+.pdf-scroll-swipe .pdf-page {
+  scroll-snap-align: center;
 }
 .pdf-page {
   position: relative;
@@ -2465,7 +2494,14 @@ h3 { font-size: 18px; }
   transform-origin: 0% 0%;
 }
 .textLayer ::selection { background: rgba(115, 175, 240, 0.4); }
-.sm-pdf-hit {
+/* `.textLayer span` above forces position:absolute on every span in the
+   layer, including this nested highlight mark — with no left/top of its
+   own that pulls it out of flow, collapsing the sibling before/after text
+   nodes over it. Pin it back to normal inline flow; needs to out-specificity
+   `.textLayer span` (class+element), so target it as `.textLayer span.sm-pdf-hit`. */
+.textLayer span.sm-pdf-hit {
+  position: static;
+  display: inline;
   background-color: rgba(255, 200, 0, 0.45);
   border-radius: 1px;
 }

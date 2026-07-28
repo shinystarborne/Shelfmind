@@ -208,9 +208,11 @@ function ShortcutsSection() {
       title: 'PDF Viewer',
       rows: [
         [['Ctrl+F'], 'Search in this PDF'],
+        [['→', '↓', 'Space', 'PgDn'], 'Next page (swipe mode)'],
+        [['←', '↑', 'PgUp'], 'Previous page (swipe mode)'],
         [['+', '='], 'Zoom in'],
         [['-'], 'Zoom out'],
-        [['0'], 'Fit width'],
+        [['0'], 'Fit width (Fit page in swipe mode)'],
         [['Ctrl+Scroll'], 'Zoom in/out'],
         [['Esc'], 'Close panel / back'],
       ],
