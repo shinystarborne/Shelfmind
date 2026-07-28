@@ -664,6 +664,52 @@ function startServer(port = 3001) {
       res.send(rows.join('\n'))
     })
 
+    // ── Backup / Restore ─────────────────────────────────────────────────────────
+    // Backs up ShelfMind's own data dir (JSON + covers + searchtext) — not the
+    // ebook files themselves, those already live in the user's library folder.
+
+    app.get('/api/backup', (_, res) => {
+      try {
+        const AdmZip = require('adm-zip')
+        const zip = new AdmZip()
+        zip.addLocalFolder(store.dataDir)
+        const stamp = new Date().toISOString().slice(0, 10)
+        res.setHeader('Content-Type', 'application/zip')
+        res.setHeader('Content-Disposition', `attachment; filename="shelfmind-backup-${stamp}.zip"`)
+        res.send(zip.toBuffer())
+      } catch (err) {
+        res.status(500).json({ error: err.message })
+      }
+    })
+
+    app.post('/api/backup/restore', express.raw({ type: '*/*', limit: '1gb' }), (req, res) => {
+      if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+        return res.status(400).json({ error: 'No backup file received' })
+      }
+      const tmpDir = path.join(os.tmpdir(), `shelfmind-restore-${Date.now()}`)
+      const AdmZip = require('adm-zip')
+      let zip
+      try {
+        zip = new AdmZip(req.body)
+      } catch {
+        return res.status(400).json({ error: "That doesn't look like a valid zip file" })
+      }
+      try {
+        const knownFiles = ['books.json', 'prefs.json', 'states.json']
+        if (!zip.getEntries().some(e => knownFiles.includes(e.entryName))) {
+          return res.status(400).json({ error: "This doesn't look like a ShelfMind backup file" })
+        }
+        fs.mkdirSync(tmpDir, { recursive: true })
+        zip.extractAllTo(tmpDir, true)
+        fs.cpSync(tmpDir, store.dataDir, { recursive: true, force: true })
+        res.json({ ok: true })
+      } catch (err) {
+        res.status(500).json({ error: err.message })
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true })
+      }
+    })
+
     // ── StoryGraph Import ──────────────────────────────────────────────────────
 
     app.post('/api/import/storygraph', express.text({ type: '*/*', limit: '5mb' }), (req, res) => {

@@ -95,6 +95,97 @@ function ExportSection() {
   )
 }
 
+// ── Backup & Restore ──────────────────────────────────────────────────────────
+function BackupSection() {
+  const { toast } = useApp()
+  const [restoring, setRestoring]   = useState(false)
+  const [confirming, setConfirming] = useState(false)
+  const [pendingFile, setPendingFile] = useState(null)
+  const fileInputRef = useRef(null)
+
+  const doBackup = () => {
+    const a = document.createElement('a')
+    a.href = `${API}/backup`
+    a.download = `shelfmind-backup-${new Date().toISOString().slice(0, 10)}.zip`
+    a.click()
+  }
+
+  const onFileChosen = (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = '' // allow re-picking the same file later
+    if (!file) return
+    setPendingFile(file)
+    setConfirming(true)
+  }
+
+  const doRestore = async () => {
+    if (!pendingFile) return
+    setConfirming(false)
+    setRestoring(true)
+    try {
+      const buf = await pendingFile.arrayBuffer()
+      const res = await fetch(`${API}/backup/restore`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/zip' },
+        body:    buf,
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Restore failed')
+      toast('Backup restored — restart ShelfMind for the changes to take effect', 'success')
+    } catch (err) {
+      toast(err.message || 'Restore failed', 'error')
+    } finally {
+      setRestoring(false)
+      setPendingFile(null)
+    }
+  }
+
+  return (
+    <div className="prefs-section">
+      <h3>💾 Backup &amp; Restore</h3>
+      <div className="pref-row" style={{ marginBottom: 16 }}>
+        <div className="pref-label">Back up your library data</div>
+        <div className="pref-hint">
+          Downloads a zip of your reading status, notes, highlights, tags, lists, and cached covers/search text —
+          not the ebook files themselves, just ShelfMind's own data.
+        </div>
+        <button className="btn btn-secondary" style={{ alignSelf: 'flex-start', marginTop: 4 }} onClick={doBackup}>
+          ⬇️ Download Backup
+        </button>
+      </div>
+
+      <div className="pref-row">
+        <div className="pref-label">Restore from a backup</div>
+        <div className="pref-hint">
+          Overwrites your current reading status, notes, and covers with what's in the zip. Your library folder and
+          ebook files are untouched.
+        </div>
+        <input ref={fileInputRef} type="file" accept=".zip" style={{ display: 'none' }} onChange={onFileChosen} />
+        {confirming ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'flex-start', marginTop: 4 }}>
+            <div style={{ fontSize: 13, color: '#c04040', fontWeight: 700 }}>
+              Restore "{pendingFile?.name}"? This overwrites your current data.
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn btn-secondary" style={{ color: '#c04040' }} onClick={doRestore}>Yes, restore</button>
+              <button className="btn btn-ghost" onClick={() => { setConfirming(false); setPendingFile(null) }}>Cancel</button>
+            </div>
+          </div>
+        ) : (
+          <button
+            className="btn btn-secondary"
+            style={{ alignSelf: 'flex-start', marginTop: 4 }}
+            onClick={() => fileInputRef.current?.click()}
+            disabled={restoring}
+          >
+            {restoring ? <span className="spin">↻</span> : '📂'} Restore from Backup…
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── PDF Tabs management ───────────────────────────────────────────────────────
 function PdfTabsSection() {
   const { toast, loadPdfTabs } = useApp()
@@ -640,6 +731,9 @@ export default function Preferences({ onSave }) {
 
         {/* Export */}
         <ExportSection />
+
+        {/* Backup & Restore */}
+        <BackupSection />
 
         {/* Updates */}
         <UpdaterSection />
