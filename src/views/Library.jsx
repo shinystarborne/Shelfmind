@@ -480,8 +480,6 @@ function GroupSection({ name, books, selectedId, selectMode, selectedIds, onChec
 
 // ── Main Library view ─────────────────────────────────────────────────────────
 export default function Library() {
-<<<<<<< HEAD
-  const {
   const {
     toast, prefs, setRefreshLibrary, refreshLibrary, openReader, openPdfReader, libraryNudges, dismissNudge,
     shelves, activeShelfId, setActiveShelfId, loadShelves,
@@ -1026,7 +1024,6 @@ export default function Library() {
       </div>
       )}
 
-<<<<<<< HEAD
       {savingShelf && (
         <div className="filter-bar" style={{ paddingTop: 0 }}>
           <input
@@ -1042,13 +1039,12 @@ export default function Library() {
           <button className="btn btn-ghost" onClick={() => { setSavingShelf(false); setShelfNameInput('') }}>Cancel</button>
         </div>
       )}
-=======
+
       {/* Continue reading */}
       <ContinueReading refreshKey={continueRefreshKey} />
 
       {/* Read Next */}
       <ReadNextSection onBookClick={id => setSelectedId(id)} />
->>>>>>> 042e2e5 (feat: continue-reading banner on Library)
 
       {/* Books */}
       <div className="library-body">
