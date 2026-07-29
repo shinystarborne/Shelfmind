@@ -3,3 +3,4 @@
 
 ## Fixes
 - Smart shelf book counts could go stale after correcting a book's metadata via "Fetch from Open Library" — fixed.
+- The update banner and drawer close button could render behind the window's minimize/maximize/close buttons — fixed.
