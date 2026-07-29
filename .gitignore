@@ -1,6 +1,7 @@
 # Private project notes / AI workspace (not for public repo)
 .shelfai/
 .claude/
+AGENTS.md
 
 # Dependencies
 node_modules/

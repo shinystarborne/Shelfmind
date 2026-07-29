@@ -108,12 +108,14 @@ class Store {
     this._pdfDocsFile = path.join(dataDir, 'pdfDocs.json')
     this._highlightsFile = path.join(dataDir, 'highlights.json')
     this._smartShelvesFile = path.join(dataDir, 'smartShelves.json')
+    this._audioMarksFile = path.join(dataDir, 'audioMarks.json')
 
     this.books   = readJson(this._booksFile,   [])
     this.states  = readJson(this._statesFile,  {})
     this.prefs   = readJson(this._prefsFile,   {})
     this.lists   = readJson(this._listsFile,   [])
     this.smartShelves = readJson(this._smartShelvesFile, [])
+    this.audioMarks = readJson(this._audioMarksFile, [])
     this.pdfTabs = readJson(this._pdfTabsFile, [])
     this.pdfDocs = readJson(this._pdfDocsFile, [])
     this.highlights = readJson(this._highlightsFile, {})   // bookId → [highlight]
@@ -998,6 +1000,37 @@ class Store {
     if (idx === -1) return false
     this.smartShelves.splice(idx, 1)
     writeJson(this._smartShelvesFile, this.smartShelves)
+    return true
+  }
+
+  // ── Audio marks (Audiobookshelf bookmarks, shown in the Quotes view) ────────
+
+  getAudioMarks() {
+    return [...this.audioMarks].sort((a, b) => b.created_at - a.created_at)
+  }
+
+  createAudioMark(fields) {
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2)
+    const mark = {
+      id,
+      abs_id:       fields.abs_id,
+      title:        fields.title || '',
+      author:       fields.author || '',
+      cover_url:    fields.cover_url || '',
+      external_url: fields.external_url || '',
+      time:         fields.time || 0,   // book-level seconds
+      created_at:   Math.floor(Date.now() / 1000),
+    }
+    this.audioMarks.push(mark)
+    writeJson(this._audioMarksFile, this.audioMarks)
+    return mark
+  }
+
+  deleteAudioMark(id) {
+    const idx = this.audioMarks.findIndex(m => m.id === id)
+    if (idx === -1) return false
+    this.audioMarks.splice(idx, 1)
+    writeJson(this._audioMarksFile, this.audioMarks)
     return true
   }
 

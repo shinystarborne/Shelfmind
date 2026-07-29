@@ -1,6 +1,4 @@
-const _electron = require('electron')
-console.log('[DEBUG] electron module type:', typeof _electron, Object.keys(_electron || {}).slice(0, 5))
-const { app, BrowserWindow, shell, ipcMain, nativeTheme, dialog } = _electron
+const { app, BrowserWindow, shell, ipcMain, nativeTheme, dialog } = require('electron')
 const path = require('path')
 
 const isDev = process.env.NODE_ENV === 'development'

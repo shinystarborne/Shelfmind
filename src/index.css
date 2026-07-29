@@ -2722,3 +2722,271 @@ h3 { font-size: 18px; }
   flex-shrink: 0;
   background: var(--r-border);
 }
+
+/* ── Audiobookshelf bottom player ─────────────────────────────────────────── */
+/* Square covers for audiobook cards (grid cards and Continue Listening row) */
+.abs-square .book-cover,
+.abs-square .book-cover-placeholder { aspect-ratio: 1/1; }
+.abs-square.read-next-card img,
+.abs-square.read-next-card .read-next-ph { height: 110px; }
+
+.abs-player {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 16px;
+  z-index: 600;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: min(1020px, calc(100vw - 48px));
+  padding: 14px 18px;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lift);
+}
+.abs-player-cover {
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.abs-player-cover-ph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--cream-dark);
+  color: var(--text-muted);
+  font-size: 18px;
+  font-weight: 700;
+}
+.abs-player-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.abs-player-top {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  position: relative;
+}
+.abs-player-info {
+  min-width: 0;
+  flex: 1;
+}
+.abs-player-title {
+  font-size: 15px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.abs-player-sub {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.abs-player-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+}
+.abs-player-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.abs-action { position: relative; }
+.abs-player-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  color: var(--text-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  flex-shrink: 0;
+}
+.abs-player-btn:hover:not(:disabled) { background: var(--cream-dark); color: var(--text); }
+.abs-player-btn:disabled { opacity: 0.35; cursor: default; }
+.abs-player-btn.active { background: var(--cream-dark); color: var(--rose-deep); }
+.abs-player-play {
+  background: var(--rose-deep);
+  color: #fff;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+}
+.abs-player-play:hover:not(:disabled) { background: var(--rose-deep); color: #fff; filter: brightness(1.08); }
+.abs-speed-label { font-size: 13px; font-weight: 700; min-width: 44px; }
+.abs-sleep-count {
+  position: absolute;
+  bottom: 1px;
+  right: 2px;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--rose-deep);
+  pointer-events: none;
+}
+.abs-player-bottom {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.abs-player-time {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+.abs-player-seek {
+  flex: 1;
+  min-width: 60px;
+  height: 6px;
+  accent-color: var(--rose-deep);
+  cursor: pointer;
+}
+.abs-player-pct {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--rose-deep);
+  min-width: 40px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* Player popovers (chapters / sleep / volume / speed) */
+.abs-popover {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  right: 0;
+  z-index: 650;
+  display: flex;
+  flex-direction: column;
+  min-width: 200px;
+  padding: 8px;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lift);
+}
+.abs-chapters {
+  min-width: 300px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.abs-chapter-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text);
+  text-align: left;
+}
+.abs-chapter-row:hover { background: var(--cream-dark); }
+.abs-chapter-row.active { color: var(--rose-deep); font-weight: 700; }
+.abs-chapter-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.abs-chapter-time {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+.abs-chapter-dur {
+  margin-left: 8px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+.abs-time-toggle { cursor: pointer; user-select: none; }
+.abs-time-toggle:hover { color: var(--text); }
+.abs-sleep-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--cream-dark);
+  border: none;
+  border-radius: 10px;
+  padding: 3px 8px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--rose-deep);
+  cursor: pointer;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.abs-sleep { min-width: 220px; }
+.abs-sleep-row {
+  padding: 9px 10px;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 13.5px;
+  color: var(--text);
+  text-align: center;
+}
+.abs-sleep-row:hover { background: var(--cream-dark); }
+.abs-sleep-custom {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 4px 2px;
+  margin-top: 4px;
+  border-top: 1px solid var(--border-soft);
+}
+.abs-sleep-custom .pref-input { margin-bottom: 0; flex: 1; }
+.abs-slider-pop {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  min-width: 230px;
+}
+.abs-slider-pop input[type="range"] { flex: 1; accent-color: var(--rose-deep); }
+.abs-slider-val {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-soft);
+  min-width: 46px;
+  text-align: right;
+}
+.abs-popover-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 599;
+}
+
+/* Keep page content from sliding under the player bar */
+.app-shell:has(.abs-player) .main-content { padding-bottom: 120px; }
+
+@media (max-width: 700px) {
+  .abs-player { bottom: 72px; width: calc(100vw - 16px); gap: 10px; padding: 10px 12px; }
+  .abs-player-top { flex-wrap: wrap; gap: 8px; }
+  .abs-player-controls { position: static; transform: none; margin: 0 auto; }
+  .abs-popover { right: -8px; }
+  .app-shell:has(.abs-player) .main-content { padding-bottom: 190px; }
+}

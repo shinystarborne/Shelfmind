@@ -3,7 +3,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend, AreaChart, Area, CartesianGrid,
 } from 'recharts'
-import { API } from '../App'
+import { API, useApp } from '../App'
 
 const PALETTE = ['#e8b4b8', '#c97b84', '#a8b89a', '#7a9168', '#c4a0a8', '#e8b96a', '#9ab8c4', '#ddc4a0']
 const ROSE = '#c97b84'
@@ -42,8 +42,10 @@ function StatCard({ value, label, sub, accent }) {
 }
 
 export default function Insights() {
+  const { prefs } = useApp()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [abs, setAbs] = useState(null)   // Audiobookshelf listening stats
 
   useEffect(() => {
     fetch(`${API}/insights`)
@@ -51,6 +53,14 @@ export default function Insights() {
       .then(d => { setData(d); setLoading(false) })
       .catch(() => setLoading(false))
   }, [])
+
+  useEffect(() => {
+    if (!prefs.abs_url) return
+    fetch(`${API}/audiobooks-stats`)
+      .then(r => r.json())
+      .then(d => { if (d.configured && !d.error) setAbs(d) })
+      .catch(() => {})
+  }, [prefs.abs_url])
 
   if (loading) return (
     <div className="empty-state" style={{ flex: 1 }}>
@@ -77,6 +87,35 @@ export default function Insights() {
   ]
 
   const langData = data.byLanguage.map((l, i) => ({ ...l, color: PALETTE[i % PALETTE.length] }))
+
+  // Audiobookshelf listening stats (only when ABS is configured and reachable)
+  let absCards = null
+  let absChartData = []
+  if (abs) {
+    const days = abs.days || {}
+    const dayKey = d => d.toISOString().slice(0, 10)
+    const now = new Date()
+    let weekSec = 0
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(now); d.setDate(d.getDate() - i)
+      const sec = days[dayKey(d)] || 0
+      if (i < 7) weekSec += sec
+      absChartData.push({ date: dayKey(d).slice(5), minutes: Math.round(sec / 60) })
+    }
+    let streak = 0
+    for (let i = 0; i < 366; i++) {
+      const d = new Date(now); d.setDate(d.getDate() - i)
+      if ((days[dayKey(d)] || 0) > 0) streak++
+      else if (i > 0) break
+    }
+    const hours = sec => (sec / 3600).toFixed(sec >= 36000 ? 0 : 1)
+    absCards = [
+      { value: hours(abs.totalTimeSec || 0), label: 'Hours Listened', sub: 'all time, Audiobookshelf', accent: ROSE },
+      { value: hours(weekSec), label: 'Hours This Week', accent: AMBER },
+      { value: abs.booksFinished || 0, label: 'Audiobooks Finished', accent: SAGE },
+      { value: streak, label: 'Day Streak', sub: streak === 1 ? 'day in a row' : 'days in a row' },
+    ]
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
@@ -157,7 +196,7 @@ export default function Insights() {
           </div>
 
           {/* Top authors */}
-          <div className="chart-card chart-card-wide">
+          <div className="chart-card">
             <h3>Top Authors</h3>
             <ResponsiveContainer width="100%" height={320}>
               <BarChart
@@ -184,7 +223,7 @@ export default function Insights() {
 
           {/* Top subjects/genres among read books */}
           {data.bySubject && data.bySubject.length > 0 && (
-            <div className="chart-card chart-card-wide">
+            <div className="chart-card">
               <h3>Most-Read Genres & Subjects</h3>
               <ResponsiveContainer width="100%" height={320}>
                 <BarChart
@@ -241,7 +280,7 @@ export default function Insights() {
 
           {/* Series completeness */}
           {data.bySeries.length > 0 && (
-            <div className="chart-card chart-card-wide">
+            <div className="chart-card">
               <h3>Series Progress</h3>
               <div className="series-list">
                 {data.bySeries.map(s => {
@@ -263,7 +302,7 @@ export default function Insights() {
           )}
           {/* Most reread */}
           {data.rereads.books.length > 0 && (
-            <div className="chart-card chart-card-wide">
+            <div className="chart-card">
               <h3>Most Reread</h3>
               <div className="series-list">
                 {data.rereads.books.map(b => (
@@ -278,6 +317,44 @@ export default function Insights() {
             </div>
           )}
         </div>
+
+        {/* Audiobookshelf listening */}
+        {absCards && (
+          <>
+            <div className="stat-cards" style={{ marginTop: 8, gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))' }}>
+              {absCards.map((c, i) => (
+                <StatCard key={i} value={c.value} label={c.label} sub={c.sub} accent={c.accent} />
+              ))}
+            </div>
+            <div className="charts-grid">
+              <div className="chart-card">
+                <h3>🎧 Listening — Last 30 Days</h3>
+                <ResponsiveContainer width="100%" height={220}>
+                  <AreaChart data={absChartData} margin={{ left: 0, right: 8, top: 8, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="absAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%"  stopColor={SAGE} stopOpacity={0.3} />
+                        <stop offset="95%" stopColor={SAGE} stopOpacity={0.02} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" />
+                    <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
+                    <YAxis tick={{ fontSize: 10, fill: 'var(--text-muted)' }} width={32} />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Area
+                      type="monotone"
+                      dataKey="minutes"
+                      name="Minutes"
+                      stroke={SAGE}
+                      fill="url(#absAreaGrad)"
+                      strokeWidth={2}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   )
