@@ -1,25 +1,11 @@
-## Library
-- **Smart shelves** — save a filter combo (status/language/format/author/series/tag) from the Library filter bar and it shows up in the sidebar to jump back to anytime.
-- **Continue the Series** — a pinned shelf that automatically surfaces the next unread book in any series you've started but not finished. Replaces the old "Read Next" suggestions strip.
-- **Continue Reading banner** — the Library now shows your most recent in-progress books and PDFs at the top, with one-click resume. Phone-to-desktop pickups are now obvious instead of silently synced.
-- **Watch-folder auto-rescan** — the library notices new, removed, or edited files on disk automatically, no need to click "Scan Library".
-- **One-click backup/restore** — Preferences → Data → download a zip of your reading status, notes, highlights, tags, and lists, or restore from one.
-- **Reread tracking** — mark a book "read again" from its detail view once you've finished it once; Insights now shows total rereads and your most-reread books.
-
-## Insights
-- **Most-Read Genres & Subjects** — a new chart showing which genres and subjects you've actually finished, counted from your read books' metadata.
-
-## Preferences
-- Reorganized into tabs (General / Library Tools / Data / Updates) instead of one long scroll.
-
-## Updates
-- ShelfMind now quietly checks for updates a few seconds after launch and shows a small banner if one is found (respects the beta-releases preference).
-- Downloaded updates now show a "What's new" modal with the release notes before you restart to install.
-- **Crash recovery** — if the app window ever fails to start, crashes, or stays blank after an update, ShelfMind shows a built-in recovery dialog offering to restart or automatically install the previous release over the broken one. Your library data is always kept separately and is never touched.
+## New
+- **Audiobookshelf integration** — connect your server in Preferences → Library Tools (URL + API token) and a new 🎧 **Audiobooks** page appears in the sidebar: your whole audiobook library with search, square covers, and finished badges.
+- **In-app player** — stream audiobooks right in ShelfMind: chapter navigation with timers, sleep timer (presets, End of Chapter, custom minutes), volume, playback speed 0.5–3×, book/chapter time toggle, live book progress %, and keyboard shortcuts (Space = play/pause, ←/→ = ±15s).
+- **Continue Listening & Continue the Series** — resume exactly where you stopped (position syncs both ways with Audiobookshelf), one card per series, and the next unheard book in every series you've started.
+- **Audio marks** — bookmark a moment from the player; marks land in Quotes with one-click jump back to a minute before the mark.
+- **Mark as finished** — from the player, or straight from a grid card without playing.
+- **Listening insights** — hours listened, hours this week, audiobooks finished, day streak, and a 30-day listening chart on the Insights page.
 
 ## Improvements
-- The PDF viewer now records when you last left off, so the Continue Reading banner can sort PDFs by recency alongside ebooks.
-
-## Fixes
-- Smart shelf book counts could go stale after correcting a book's metadata via "Fetch from Open Library" — fixed.
-- The update banner and drawer close button could render behind the window's minimize/maximize/close buttons — fixed.
+- Insights charts are now two-per-row instead of full-width — easier to scan.
+- Continue Reading banner shows only on the main Library page, not inside shelves.
