@@ -1,0 +1,30 @@
+name: Build macOS (unsigned)
+
+# Manual only for now — no Apple Developer account yet, so this produces an
+# unsigned dmg/zip that will trigger Gatekeeper warnings on the machine that
+# opens it. Good enough to test that the app actually launches on macOS.
+# Once signing + notarization are set up, this can gain a real release job.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm ci
+
+      - run: npm run dist:mac
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shelfmind-macos-unsigned
+          path: |
+            release/*.dmg
+            release/*.zip
+          if-no-files-found: error
