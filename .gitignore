@@ -1,6 +1,6 @@
-# Local dev notes (not for users)
-DEV.md
-ROADMAP.md
+# Private project notes / AI workspace (not for public repo)
+.shelfai/
+.claude/
 
 # Dependencies
 node_modules/
