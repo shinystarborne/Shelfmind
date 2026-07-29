@@ -687,7 +687,22 @@ class Store {
     }
     const addedOverTime = Object.entries(tm).sort().map(([month, count]) => ({ month, count }))
 
-    return { total, byStatus, byFormat, byLanguage, byAuthor, bySeries, addedOverTime }
+    // Subjects/genres among read books — gives a "what you read most" breakdown
+    const subCounts = {}
+    for (const b of books) {
+      if (this.states[b.id]?.status !== 'read') continue
+      if (!Array.isArray(b.subjects)) continue
+      for (const s of b.subjects) {
+        if (!s) continue
+        subCounts[s] = (subCounts[s] || 0) + 1
+      }
+    }
+    const bySubject = Object.entries(subCounts)
+      .map(([subject, count]) => ({ subject, count }))
+      .sort((a, b) => b.count - a.count || a.subject.localeCompare(b.subject))
+      .slice(0, 15)
+
+    return { total, byStatus, byFormat, byLanguage, byAuthor, bySeries, addedOverTime, bySubject }
   }
 
   // ── Dropdowns ─────────────────────────────────────────────────────────────────
