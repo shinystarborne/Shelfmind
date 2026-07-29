@@ -182,6 +182,34 @@ export default function Insights() {
             </ResponsiveContainer>
           </div>
 
+          {/* Top subjects/genres among read books */}
+          {data.bySubject && data.bySubject.length > 0 && (
+            <div className="chart-card chart-card-wide">
+              <h3>Most-Read Genres & Subjects</h3>
+              <ResponsiveContainer width="100%" height={320}>
+                <BarChart
+                  data={data.bySubject}
+                  layout="vertical"
+                  margin={{ left: 16, right: 24, top: 0, bottom: 0 }}
+                >
+                  <XAxis type="number" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} />
+                  <YAxis
+                    type="category"
+                    dataKey="subject"
+                    width={130}
+                    tick={{ fontSize: 11, fill: 'var(--text-soft)' }}
+                  />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Bar dataKey="count" name="Read books" radius={[0, 4, 4, 0]}>
+                    {data.bySubject.map((_, i) => (
+                      <Cell key={i} fill={i % 2 === 0 ? SAGE : '#a8c49a'} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
           {/* Added over time */}
           {data.addedOverTime.length > 1 && (
             <div className="chart-card">
