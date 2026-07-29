@@ -4,6 +4,7 @@ import { API, useApp, CONTINUE_SERIES_SHELF_ID } from '../App'
 import BookCard, { BookListItem } from '../components/BookCard'
 import BookDrawer from '../components/BookDrawer'
 import DuplicatesModal from '../components/DuplicatesModal'
+import { coverSrc, initials, displayAuthor } from '../components/BookCard'
 
 const SORT_OPTIONS = [
   { value: 'title',   label: 'Title A–Z' },
