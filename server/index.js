@@ -502,6 +502,10 @@ function startServer(port = 3001) {
       res.json({ query: q, results: store.searchAll(q) })
     })
 
+    // ── Continue reading ─────────────────────────────────────────────────────
+
+    app.get('/api/continue-reading', (_, res) => res.json(store.getContinueReading()))
+
     // ── Insights ───────────────────────────────────────────────────────────────
 
     app.get('/api/insights', (_, res) => res.json(store.getInsights()))

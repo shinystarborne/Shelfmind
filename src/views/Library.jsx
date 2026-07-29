@@ -242,6 +242,130 @@ function FixedDropdown({ label, active, items, selected, onSelect, onClose }) {
   )
 }
 
+// ── Continue reading banner ─────────────────────────────────────────────────
+function ContinueReading({ refreshKey }) {
+  const { openReader, openPdfReader } = useApp()
+  const [items, setItems] = useState({ books: [], pdfs: [] })
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('sm_continue_collapsed') === 'true')
+
+  const load = useCallback(() => {
+    fetch(`${API}/continue-reading`)
+      .then(r => r.json())
+      .then(setItems)
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => { load() }, [load, refreshKey])
+
+  const total = items.books.length + items.pdfs.length
+  if (total === 0) return null
+
+  const all = [
+    ...items.books.map(b => ({ kind: 'book', ...b })),
+    ...items.pdfs.map(d => ({ kind: 'pdf', ...d })),
+  ].sort((a, b) => (b._resumedAt || 0) - (a._resumedAt || 0))
+
+  return (
+    <div className="read-next-section continue-reading-section">
+      <div className="read-next-header" onClick={() => {
+        const next = !collapsed
+        setCollapsed(next)
+        localStorage.setItem('sm_continue_collapsed', String(next))
+      }}>
+        <span>🔖 Continue Reading</span>
+        <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-muted)', marginLeft: 4 }}>
+          ({total})
+        </span>
+        <span style={{ marginLeft: 'auto', fontSize: 12 }}>{collapsed ? '▾' : '▴'}</span>
+      </div>
+      {!collapsed && (
+        <div className="read-next-scroll">
+          {all.map(item => {
+            const isBook = item.kind === 'book'
+            const src = isBook ? coverSrc(item) : (item.cover ? `${API.replace('/api', '')}${item.cover}` : null)
+            const init = initials(item.title)
+            const subtitle = isBook ? displayAuthor(item) : (item.tab_name || 'PDF')
+            const progress = isBook
+              ? (item.reading_position?.percent || 0)
+              : Math.round(((item.last_page || 1) / (item.page_count || item.last_page || 1)) * 100)
+            return (
+              <div
+                key={`${item.kind}-${item.id}`}
+                className="read-next-card continue-reading-card"
+                onClick={() => {
+                  if (isBook) {
+                    const pos = item.reading_position
+                    openReader(item, pos ? { spine: pos.spine, frac: pos.frac } : null)
+                  } else {
+                    openPdfReader({ id: item.id, title: item.title }, { page: item.last_page })
+                  }
+                }}
+              >
+                {src
+                  ? <img src={src} alt={item.title} />
+                  : <div className="read-next-ph">{init}</div>
+                }
+                <div className="read-next-title">{item.title}</div>
+                <div className="read-next-author">{subtitle}</div>
+                {progress > 0 && (
+                  <div className="book-progress" title={`${Math.round(progress)}% read`}>
+                    <div className="book-progress-fill" style={{ width: `${Math.min(100, progress)}%` }} />
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Read Next section ─────────────────────────────────────────────────────────
+function ReadNextSection({ onBookClick }) {
+  const [books,     setBooks]     = useState([])
+  const [collapsed, setCollapsed] = useState(true)
+
+  useEffect(() => {
+    fetch(`${API}/recommendations?limit=5`)
+      .then(r => r.json())
+      .then(setBooks)
+      .catch(() => {})
+  }, [])
+
+  if (books.length === 0) return null
+
+  return (
+    <div className="read-next-section">
+      <div className="read-next-header" onClick={() => setCollapsed(c => !c)}>
+        <span>✨ Read Next</span>
+        <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-muted)', marginLeft: 4 }}>
+          ({books.length} suggestions)
+        </span>
+        <span style={{ marginLeft: 'auto', fontSize: 12 }}>{collapsed ? '▾' : '▴'}</span>
+      </div>
+      {!collapsed && (
+        <div className="read-next-scroll">
+          {books.map(book => {
+            const src = coverSrc(book)
+            const init = initials(book.title)
+            return (
+              <div key={book.id} className="read-next-card" onClick={() => onBookClick(book.id)}>
+                {src
+                  ? <img src={src} alt={book.title} />
+                  : <div className="read-next-ph">{init}</div>
+                }
+                <div className="read-next-title">{book.title}</div>
+                <div className="read-next-author">{displayAuthor(book)}</div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Bulk action bar ───────────────────────────────────────────────────────────
 function BulkBar({ selectedIds, onClear, onAction, toast }) {
   const count = selectedIds.length
@@ -356,8 +480,10 @@ function GroupSection({ name, books, selectedId, selectMode, selectedIds, onChec
 
 // ── Main Library view ─────────────────────────────────────────────────────────
 export default function Library() {
+<<<<<<< HEAD
   const {
-    toast, prefs, setRefreshLibrary, refreshLibrary, openPdfReader, libraryNudges, dismissNudge,
+  const {
+    toast, prefs, setRefreshLibrary, refreshLibrary, openReader, openPdfReader, libraryNudges, dismissNudge,
     shelves, activeShelfId, setActiveShelfId, loadShelves,
   } = useApp()
   const [continueSeriesBooks, setContinueSeriesBooks] = useState(null) // null = not viewing that shelf
@@ -386,6 +512,7 @@ export default function Library() {
   const [ftHits, setFtHits] = useState(new Map())     // bookId -> {matchCount, matches}
   const [ftPdfHits, setFtPdfHits] = useState([])      // pdf-kind results, shown separately
   const [pdfHitsOpen, setPdfHitsOpen] = useState(false)
+  const [continueRefreshKey, setContinueRefreshKey] = useState(0)
   const searchRef = useRef(null)
   const enrichPollRef = useRef(null)
   const indexPollRef  = useRef(null)
@@ -401,7 +528,11 @@ export default function Library() {
 
     fetch(`${API}/books?${params}`)
       .then(r => r.json())
-      .then(data => { setBooks(data); setLoading(false) })
+      .then(data => {
+        setBooks(data)
+        setLoading(false)
+        setContinueRefreshKey(k => k + 1)
+      })
       .catch(() => setLoading(false))
   }, [filters, authorFilter, seriesFilter])
 
@@ -895,6 +1026,7 @@ export default function Library() {
       </div>
       )}
 
+<<<<<<< HEAD
       {savingShelf && (
         <div className="filter-bar" style={{ paddingTop: 0 }}>
           <input
@@ -910,6 +1042,13 @@ export default function Library() {
           <button className="btn btn-ghost" onClick={() => { setSavingShelf(false); setShelfNameInput('') }}>Cancel</button>
         </div>
       )}
+=======
+      {/* Continue reading */}
+      <ContinueReading refreshKey={continueRefreshKey} />
+
+      {/* Read Next */}
+      <ReadNextSection onBookClick={id => setSelectedId(id)} />
+>>>>>>> 042e2e5 (feat: continue-reading banner on Library)
 
       {/* Books */}
       <div className="library-body">

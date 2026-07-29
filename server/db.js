@@ -510,6 +510,33 @@ class Store {
   }
 
   // Where the in-app reader left off: { spine, frac, percent, updated_at }
+  getContinueReading() {
+    const books = []
+    for (const b of this.books) {
+      if (b.removed) continue
+      const st = this.states[b.id] || {}
+      if (st.status === 'reading' || st.reading_position) {
+        books.push({ ...this._attachState(b), _resumedAt: st.reading_position?.updated_at || 0 })
+      }
+    }
+    books.sort((a, b) => b._resumedAt - a._resumedAt)
+
+    const pdfs = []
+    for (const d of this.pdfDocs) {
+      if (!d.last_page || !fs.existsSync(d.path)) continue
+      const tab = this.pdfTabs.find(t => t.id === d.tab_id)
+      pdfs.push({
+        ...d,
+        cover: this.pdfCoverPath(d.id),
+        tab_name: tab?.name || '',
+        _resumedAt: d.last_page_updated_at || 0,
+      })
+    }
+    pdfs.sort((a, b) => b._resumedAt - a._resumedAt)
+
+    return { books: books.slice(0, 5), pdfs: pdfs.slice(0, 5) }
+  }
+
   setReadingPosition(bookId, pos) {
     if (!this.states[bookId]) this.states[bookId] = {}
     this.states[bookId].reading_position = { ...pos, updated_at: Date.now() }
@@ -1103,8 +1130,11 @@ class Store {
     if (fields.tags   !== undefined) d.tags  = Array.isArray(fields.tags) ? fields.tags : []
     if (fields.tab_id !== undefined && this.pdfTabs.some(t => t.id === fields.tab_id)) d.tab_id = fields.tab_id
     // In-app PDF viewer position
-    if (typeof fields.last_page === 'number') d.last_page = Math.max(1, Math.round(fields.last_page))
-    if (typeof fields.zoom      === 'number') d.zoom      = fields.zoom
+    if (typeof fields.last_page === 'number') {
+      d.last_page = Math.max(1, Math.round(fields.last_page))
+      d.last_page_updated_at = Date.now()
+    }
+    if (typeof fields.zoom === 'number') d.zoom = fields.zoom
     writeJson(this._pdfDocsFile, this.pdfDocs)
     return d
   }
