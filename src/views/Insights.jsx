@@ -101,6 +101,12 @@ export default function Insights() {
             label="Series"
             sub="with 2+ books"
           />
+          <StatCard
+            value={data.rereads.total}
+            label="Rereads"
+            sub={data.rereads.total > 0 ? `across ${data.rereads.books.length} book${data.rereads.books.length === 1 ? '' : 's'}` : undefined}
+            accent={AMBER}
+          />
         </div>
 
         <div className="charts-grid">
@@ -224,6 +230,22 @@ export default function Insights() {
                     </div>
                   )
                 })}
+              </div>
+            </div>
+          )}
+          {/* Most reread */}
+          {data.rereads.books.length > 0 && (
+            <div className="chart-card chart-card-wide">
+              <h3>Most Reread</h3>
+              <div className="series-list">
+                {data.rereads.books.map(b => (
+                  <div key={b.book_id} className="series-row">
+                    <div className="series-row-label">
+                      <span className="sname">{b.title}{b.author ? ` — ${b.author}` : ''}</span>
+                      <span className="scount">read {b.read_count}×</span>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}

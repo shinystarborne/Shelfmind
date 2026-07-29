@@ -664,6 +664,8 @@ h3 { font-size: 18px; }
   margin-bottom: 8px;
 }
 
+.reread-btn { width: 100%; justify-content: center; margin-top: 8px; }
+
 /* Status toggle */
 .status-toggle {
   display: grid;

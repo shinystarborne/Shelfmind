@@ -571,6 +571,13 @@ export default function BookDrawer({ bookId, onClose, onStatusChange, onRemoved 
     load() // refresh to pick up auto-set dates
   }
 
+  const markReread = async () => {
+    const updated = await fetch(`${API}/books/${bookId}/reread`, { method: 'POST' }).then(r => r.json())
+    setBook(updated)
+    onStatusChange?.(bookId, 'read')
+    toast(`Marked as reread — ${updated.read_count}× total`, 'success')
+  }
+
   const setRating = async (rating) => {
     await fetch(`${API}/books/${bookId}/rating`, {
       method: 'PUT',
@@ -735,6 +742,11 @@ export default function BookDrawer({ bookId, onClose, onStatusChange, onRemoved 
                     </button>
                   ))}
                 </div>
+                {status === 'read' && (
+                  <button className="btn btn-secondary reread-btn" onClick={markReread}>
+                    🔁 I read this again{book.read_count > 1 ? ` · read ${book.read_count}×` : ''}
+                  </button>
+                )}
               </div>
 
               {/* Star rating */}

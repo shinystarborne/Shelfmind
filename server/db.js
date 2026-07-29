@@ -241,6 +241,8 @@ class Store {
       tags:         st.tags       || [],
       started_at:   st.started_at ?? null,
       finished_at:  st.finished_at ?? null,
+      read_count:   st.read_count ?? (st.status === 'read' ? 1 : 0),
+      reread_dates: st.reread_dates || [],
       reading_position: st.reading_position || null,
     }
   }
@@ -272,7 +274,21 @@ class Store {
     if (note !== undefined) st.note = note
     if (status === 'reading' && !st.started_at) st.started_at = now
     if (status === 'read'  && !st.finished_at) st.finished_at = now
+    if (status === 'read'  && !st.read_count)  st.read_count  = 1
     if (status === 'dnf'   && !st.finished_at) st.finished_at = now
+    writeJson(this._statesFile, this.states)
+  }
+
+  markReread(bookId) {
+    if (!this.states[bookId]) this.states[bookId] = {}
+    const st  = this.states[bookId]
+    const now = Math.floor(Date.now() / 1000)
+    if (!Array.isArray(st.reread_dates)) st.reread_dates = []
+    st.reread_dates.push(now)
+    st.read_count  = (st.read_count || 1) + 1
+    st.status      = 'read'
+    st.finished_at = now
+    st.updated_at  = Date.now()
     writeJson(this._statesFile, this.states)
   }
 
@@ -530,6 +546,7 @@ class Store {
       st.updated_at = Date.now()
       if (status === 'reading' && !st.started_at)  st.started_at  = now
       if (status === 'read'    && !st.finished_at) st.finished_at = now
+      if (status === 'read'    && !st.read_count)  st.read_count  = 1
       if (status === 'dnf'     && !st.finished_at) st.finished_at = now
     }
     writeJson(this._statesFile, this.states)
@@ -680,7 +697,25 @@ class Store {
     }
     const addedOverTime = Object.entries(tm).sort().map(([month, count]) => ({ month, count }))
 
-    return { total, byStatus, byFormat, byLanguage, byAuthor, bySeries, addedOverTime }
+    // Rereads — read_count > 1 means the book's been finished more than once
+    let totalRereads = 0
+    const mostReread = []
+    for (const b of books) {
+      const rc = this.states[b.id]?.read_count || 0
+      if (rc > 1) {
+        totalRereads += rc - 1
+        mostReread.push({
+          book_id:    b.id,
+          title:      b.title,
+          author:     b.author_canonical || b.author || '',
+          read_count: rc,
+        })
+      }
+    }
+    mostReread.sort((a, b) => b.read_count - a.read_count)
+    const rereads = { total: totalRereads, books: mostReread.slice(0, 10) }
+
+    return { total, byStatus, byFormat, byLanguage, byAuthor, bySeries, addedOverTime, rereads }
   }
 
   // ── Dropdowns ─────────────────────────────────────────────────────────────────

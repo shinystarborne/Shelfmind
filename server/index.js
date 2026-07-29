@@ -86,6 +86,13 @@ function startServer(port = 3001) {
       res.json({ ok: true })
     })
 
+    app.post('/api/books/:id/reread', (req, res) => {
+      const book = store.getBook(req.params.id)
+      if (!book) return res.status(404).json({ error: 'Not found' })
+      store.markReread(req.params.id)
+      res.json(store.getBook(req.params.id))
+    })
+
     // ── In-app reader (epub / fb2 / doc / docx) ────────────────────────────────
 
     app.get('/api/books/:id/reader/structure', async (req, res) => {
