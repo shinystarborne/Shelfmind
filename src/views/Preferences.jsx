@@ -2,6 +2,16 @@ import { useState, useEffect, useRef } from 'react'
 import { API, useApp } from '../App'
 import LibraryImportModal from '../components/LibraryImportModal'
 import { formatFileSize } from '../components/BookCard'
+import { applyPalette, syncTitlebar } from '../lib/theme'
+
+// Color palettes — token definitions live in src/index.css ("Color Palettes").
+// swatches: [light bg, light accent, dark bg, dark accent] preview dots.
+const PALETTES = [
+  { id: 'rose',     name: 'Rose',     swatches: ['#fdf6f0', '#c97b84', '#1c1410', '#c97b84'] },
+  { id: 'ocean',    name: 'Ocean',    swatches: ['#f4f7f9', '#4a7ba6', '#10161d', '#6ba3cc'] },
+  { id: 'forest',   name: 'Forest',   swatches: ['#f6f6ef', '#5e8a4e', '#11150f', '#8ab86e'] },
+  { id: 'lavender', name: 'Lavender', swatches: ['#f8f6fa', '#8a6aae', '#141118', '#b294d4'] },
+]
 
 // ── _Removed folder cleanup ───────────────────────────────────────────────────
 function RemovedFolderSection() {
@@ -503,6 +513,13 @@ export default function Preferences({ onSave }) {
 
   const set = (key, val) => setPrefs(p => ({ ...p, [key]: val }))
 
+  // Palette applies live (attribute + titlebar); persisted on Save like the rest.
+  const selectPalette = (id) => {
+    set('palette', id)
+    applyPalette(id)
+    syncTitlebar(document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light')
+  }
+
   const save = async () => {
     setSaving(true)
     await fetch(`${API}/preferences`, {
@@ -592,6 +609,24 @@ export default function Preferences({ onSave }) {
         {/* Appearance */}
         <div className="prefs-section">
           <h3>🎨 Appearance</h3>
+          <div className="pref-row">
+            <div className="pref-label">Color Palette</div>
+            <div className="pref-hint">Applies to both light and dark mode — each palette has its own dark variant</div>
+            <div className="palette-grid">
+              {PALETTES.map(p => (
+                <button
+                  key={p.id}
+                  className={`palette-card ${(prefs.palette || 'rose') === p.id ? 'active' : ''}`}
+                  onClick={() => selectPalette(p.id)}
+                >
+                  <span className="palette-swatches">
+                    {p.swatches.map((c, i) => <span key={i} style={{ background: c }} />)}
+                  </span>
+                  {p.name}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="pref-row">
             <div className="pref-label">Default View</div>
             <div className="pref-radio-group">

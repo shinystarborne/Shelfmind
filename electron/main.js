@@ -219,11 +219,16 @@ ipcMain.handle('pick-pdf-files', async () => {
 ipcMain.handle('get-app-version', () => app.getVersion())
 ipcMain.handle('get-platform', () => process.platform)
 
-ipcMain.handle('set-theme', (_, theme) => {
+ipcMain.handle('set-theme', (_, theme, colors) => {
   if (!mainWindow) return
-  if (theme === 'dark') {
-    mainWindow.setTitleBarOverlay({ color: '#1c1410', symbolColor: '#e8c4a8', height: 36 })
-  } else {
-    mainWindow.setTitleBarOverlay({ color: '#fdf6f0', symbolColor: '#6b4c3b', height: 36 })
-  }
+  // Renderer passes the active palette's computed colors; fall back to the
+  // default palette's hardcoded values when they're missing.
+  const fallback = theme === 'dark'
+    ? { color: '#1c1410', symbolColor: '#e8c4a8' }
+    : { color: '#fdf6f0', symbolColor: '#6b4c3b' }
+  mainWindow.setTitleBarOverlay({
+    color:       colors?.color       || fallback.color,
+    symbolColor: colors?.symbolColor || fallback.symbolColor,
+    height: 36,
+  })
 })

@@ -1106,6 +1106,190 @@ h3 { font-size: 18px; }
 
 [data-theme="dark"] body { background: var(--cream); }
 
+/* ── Color Palettes ──────────────────────────────────────────────────────────
+   Selected via data-palette on <html> (see src/lib/theme.js). No attribute (or
+   "rose") keeps the default palette defined in :root / [data-theme="dark"]
+   above. These blocks must come AFTER those defaults: the light blocks win by
+   source order, the dark blocks win by higher specificity. */
+
+/* Ocean — cool slate blue; deep navy-charcoal dark */
+[data-palette="ocean"] {
+  --cream:       #f4f7f9;
+  --cream-dark:  #e8eef2;
+  --parchment:   #d8e2e8;
+  --rose:        #b8cfe0;
+  --rose-deep:   #4a7ba6;
+  --sage:        #9ab8a4;
+  --sage-dark:   #5e8a6e;
+  --dusty-mauve: #8fa8bc;
+  --brown:       #2e4a5e;
+  --brown-light: #5e7e92;
+  --text:        #1e2c38;
+  --text-soft:   #4e6878;
+  --text-muted:  #8aa4b2;
+  --border:      #c8d8e0;
+  --border-soft: #dde8ee;
+  --white:       #ffffff;
+  --shadow-soft: 0 2px 12px rgba(46, 74, 94, 0.08);
+  --shadow-card: 0 4px 20px rgba(46, 74, 94, 0.12);
+  --shadow-lift: 0 8px 32px rgba(46, 74, 94, 0.18);
+  --status-unread:  #8fa8bc;
+  --status-reading: #e0b46a;
+  --status-read:    #9ab8a4;
+}
+[data-palette="ocean"][data-theme="dark"] {
+  --cream:       #10161d;
+  --cream-dark:  #161e27;
+  --parchment:   #1e2833;
+  --rose:        #2e4a60;
+  --rose-deep:   #6ba3cc;
+  --sage:        #3a5044;
+  --sage-dark:   #6e9a7e;
+  --dusty-mauve: #4a6070;
+  --brown:       #a8c8dc;
+  --brown-light: #7ea4b8;
+  --text:        #e2ecf2;
+  --text-soft:   #9ab4c2;
+  --text-muted:  #5e7a8a;
+  --border:      #2a3a48;
+  --border-soft: #1e2833;
+  --white:       #1a242e;
+  --status-unread:  #4a5e70;
+  --status-reading: #7a5e28;
+  --status-read:    #33503e;
+}
+
+/* Forest — moss green on warm paper; green-charcoal dark */
+[data-palette="forest"] {
+  --cream:       #f6f6ef;
+  --cream-dark:  #eceee0;
+  --parchment:   #dde2cc;
+  --rose:        #c2d4b0;
+  --rose-deep:   #5e8a4e;
+  --sage:        #a8b89a;
+  --sage-dark:   #7a9168;
+  --dusty-mauve: #9aa888;
+  --brown:       #3e5232;
+  --brown-light: #6e8462;
+  --text:        #26301e;
+  --text-soft:   #56684a;
+  --text-muted:  #96a488;
+  --border:      #d2dcc2;
+  --border-soft: #e4e9d8;
+  --white:       #ffffff;
+  --shadow-soft: 0 2px 12px rgba(62, 82, 50, 0.08);
+  --shadow-card: 0 4px 20px rgba(62, 82, 50, 0.12);
+  --shadow-lift: 0 8px 32px rgba(62, 82, 50, 0.18);
+  --status-unread:  #9aa888;
+  --status-reading: #e0b46a;
+  --status-read:    #a8b89a;
+}
+[data-palette="forest"][data-theme="dark"] {
+  --cream:       #11150f;
+  --cream-dark:  #181d14;
+  --parchment:   #21281a;
+  --rose:        #33482a;
+  --rose-deep:   #8ab86e;
+  --sage:        #3e5234;
+  --sage-dark:   #7a9168;
+  --dusty-mauve: #4e5e42;
+  --brown:       #b8d0a4;
+  --brown-light: #8aa474;
+  --text:        #e4ecda;
+  --text-soft:   #a4b892;
+  --text-muted:  #6a7e5c;
+  --border:      #2e3a26;
+  --border-soft: #21281a;
+  --white:       #1c2316;
+  --status-unread:  #4e5e42;
+  --status-reading: #7a5e28;
+  --status-read:    #3a5830;
+}
+
+/* Lavender — muted purple on lilac-white; plum-charcoal dark */
+[data-palette="lavender"] {
+  --cream:       #f8f6fa;
+  --cream-dark:  #f0ecf4;
+  --parchment:   #e2dae8;
+  --rose:        #d4c2e4;
+  --rose-deep:   #8a6aae;
+  --sage:        #a0b49a;
+  --sage-dark:   #748e68;
+  --dusty-mauve: #b09cc0;
+  --brown:       #4e3e62;
+  --brown-light: #7e6a92;
+  --text:        #2e2440;
+  --text-soft:   #625478;
+  --text-muted:  #a296b2;
+  --border:      #d8cee2;
+  --border-soft: #e8e2ee;
+  --white:       #ffffff;
+  --shadow-soft: 0 2px 12px rgba(78, 62, 98, 0.08);
+  --shadow-card: 0 4px 20px rgba(78, 62, 98, 0.12);
+  --shadow-lift: 0 8px 32px rgba(78, 62, 98, 0.18);
+  --status-unread:  #b09cc0;
+  --status-reading: #e0b46a;
+  --status-read:    #a0b49a;
+}
+[data-palette="lavender"][data-theme="dark"] {
+  --cream:       #141118;
+  --cream-dark:  #1b1620;
+  --parchment:   #241e2c;
+  --rose:        #423052;
+  --rose-deep:   #b294d4;
+  --sage:        #44523e;
+  --sage-dark:   #748e68;
+  --dusty-mauve: #5c466e;
+  --brown:       #ccb8e0;
+  --brown-light: #a28eb8;
+  --text:        #eae4f2;
+  --text-soft:   #b0a2c2;
+  --text-muted:  #786a8a;
+  --border:      #342a40;
+  --border-soft: #241e2c;
+  --white:       #201a28;
+  --status-unread:  #5c466e;
+  --status-reading: #7a5e28;
+  --status-read:    #3a5238;
+}
+
+/* Palette picker (Preferences → Appearance) */
+.palette-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+.palette-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 8px;
+  background: var(--white);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--text-soft);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.palette-card:hover { border-color: var(--rose-deep); }
+.palette-card.active {
+  border-color: var(--rose-deep);
+  box-shadow: 0 0 0 2px var(--border-soft), 0 0 0 3.5px var(--rose-deep);
+  color: var(--text);
+  font-weight: 600;
+}
+.palette-swatches { display: flex; gap: 5px; }
+.palette-swatches span {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+}
+
 /* Dark: scrollbar */
 [data-theme="dark"] ::-webkit-scrollbar-thumb { background: var(--border); }
 

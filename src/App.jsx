@@ -10,6 +10,7 @@ import PdfReader from './components/PdfReader'
 import Quotes from './views/Quotes'
 import UpdateNotesModal from './components/UpdateNotesModal'
 import AudiobookPlayer from './components/AudiobookPlayer'
+import { applyPalette, syncTitlebar } from './lib/theme'
 
 // When loaded in Electron (file://) hostname is empty — fall back to localhost.
 // When opened in a browser via QR code the hostname is the LAN IP, so API calls go to the right machine.
@@ -307,7 +308,8 @@ export default function App() {
         setPrefs(p)
         const theme = p.theme === 'dark' ? 'dark' : 'light'
         document.documentElement.setAttribute('data-theme', theme)
-        window.electronAPI?.setTheme(theme)
+        applyPalette(p.palette)
+        syncTitlebar(theme)
         // Quietly check for updates a few seconds after launch — respects the
         // beta-channel preference; only surfaces UI if something is actually found.
         if (window.electronAPI) setTimeout(() => checkForUpdate(!!p.beta_updates), 5000)
@@ -323,7 +325,7 @@ export default function App() {
   const toggleTheme = useCallback(() => {
     const next = prefs.theme === 'dark' ? 'light' : 'dark'
     document.documentElement.setAttribute('data-theme', next)
-    window.electronAPI?.setTheme(next)
+    syncTitlebar(next)
     setPrefs(p => ({ ...p, theme: next }))
     fetch(`${API}/preferences`, {
       method:  'PUT',

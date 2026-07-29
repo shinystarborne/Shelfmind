@@ -124,6 +124,7 @@ class Store {
     const defaults = {
       library_path: 'E:\\Books',
       theme:        'light',
+      palette:      'rose',
       default_view: 'grid',
       kindle_email: '',
       kindle_mode:  'web',
