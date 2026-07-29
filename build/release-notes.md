@@ -1,10 +1,5 @@
 ## Library
-- Smart shelves — save a filter combo (status/language/format/author/series/tag) from the Library filter bar and it shows up in the sidebar to jump back to anytime.
-- "Continue the Series" — a pinned shelf that automatically surfaces the next unread book in any series you've started but not finished. Replaces the old "Read Next" suggestions strip.
-- One-click backup/restore — Preferences → Data → download a zip of your reading status, notes, highlights, tags, and lists, or restore from one.
+- Reread tracking — mark a book "read again" from its detail view once you've finished it once; Insights now shows total rereads and your most-reread books.
 
-## Preferences
-- Reorganized into tabs (General / Library Tools / Data / Updates) instead of one long scroll.
-
-## Under the hood
-- Watch-folder auto-rescan and the auto-update-check + "what's new" modal from the last beta are still here.
+## Fixes
+- Smart shelf book counts could go stale after correcting a book's metadata via "Fetch from Open Library" — fixed.
