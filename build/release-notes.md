@@ -1,6 +1,6 @@
-## Library
-- Reread tracking — mark a book "read again" from its detail view once you've finished it once; Insights now shows total rereads and your most-reread books.
+## New
+- **Continue Reading banner** — Library now shows your most recent in-progress books and PDFs at the top, with one-click resume. Phone-to-desktop pickups are now obvious instead of silently synced.
+- **Most-Read Genres & Subjects** — Insights page adds a new chart showing which genres and subjects you've actually finished, counted from your read books' metadata.
 
-## Fixes
-- Smart shelf book counts could go stale after correcting a book's metadata via "Fetch from Open Library" — fixed.
-- The update banner and drawer close button could render behind the window's minimize/maximize/close buttons — fixed.
+## Improvements
+- PDF viewer now records when you last left off, so the Continue Reading banner can sort PDFs by recency alongside ebooks.
