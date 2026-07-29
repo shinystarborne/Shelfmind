@@ -637,7 +637,7 @@ export default function BookDrawer({ bookId, onClose, onStatusChange, onRemoved 
     setEnriching(true)
     try {
       const res = await fetch(`${API}/enrich/${bookId}`, { method: 'POST' }).then(r => r.json())
-      if (res.ok) { setBook(res.book); toast('Metadata updated from Open Library', 'success') }
+      if (res.ok) { setBook(res.book); refreshLibrary(); toast('Metadata updated from Open Library', 'success') }
       else toast('No match found on Open Library')
     } finally { setEnriching(false) }
   }
