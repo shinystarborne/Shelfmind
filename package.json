@@ -9,7 +9,8 @@
     "build": "vite build",
     "dist": "npm run build && electron-builder",
     "release": "npm run build && electron-builder --publish always",
-    "release:beta": "npm run build && electron-builder --publish always -c.publish.releaseType=prerelease -c.publish.channel=beta"
+    "release:beta": "npm run build && electron-builder --publish always -c.publish.releaseType=prerelease -c.publish.channel=beta",
+    "dist:mac": "npm run build && electron-builder --mac --publish never"
   },
   "dependencies": {
     "adm-zip": "^0.5.10",
@@ -69,6 +70,15 @@
       "icon": "assets/icon.ico",
       "signingHashAlgorithms": [],
       "forceCodeSigning": false
+    },
+    "mac": {
+      "target": [
+        { "target": "dmg", "arch": ["x64", "arm64"] },
+        { "target": "zip", "arch": ["x64", "arm64"] }
+      ],
+      "icon": "assets/icon.png",
+      "category": "public.app-category.productivity",
+      "identity": null
     },
     "nsis": {
       "oneClick": false,
