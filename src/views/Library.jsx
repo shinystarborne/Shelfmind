@@ -744,12 +744,16 @@ export default function Library() {
   }
 
   const deleteActiveShelf = async () => {
-    if (!activeShelfId || activeShelfId === CONTINUE_SERIES_SHELF_ID) return
+    if (!activeShelfId || isPseudoShelf) return
     await fetch(`${API}/smart-shelves/${activeShelfId}`, { method: 'DELETE' })
     setActiveShelfId(null)
     loadShelves()
     toast('Smart shelf deleted', 'success')
   }
+
+  // Pinned pseudo-shelves render a fetched list instead of the filtered library,
+  // so filter/sort/select/view controls don't apply to them.
+  const isPseudoShelf = activeShelfId === CONTINUE_SERIES_SHELF_ID
 
   const activeShelfName = activeShelfId === CONTINUE_SERIES_SHELF_ID
     ? '📖 Continue the Series'
@@ -851,7 +855,7 @@ export default function Library() {
             onChange={e => setSearch(e.target.value)}
           />
         </div>
-        {activeShelfId !== CONTINUE_SERIES_SHELF_ID && (view === 'grid' || view === 'list') && (
+        {!isPseudoShelf && (view === 'grid' || view === 'list') && (
           <select
             className="btn btn-ghost"
             style={{ fontWeight: 400, fontSize: 13 }}
@@ -861,7 +865,7 @@ export default function Library() {
             {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         )}
-        {activeShelfId !== CONTINUE_SERIES_SHELF_ID && (
+        {!isPseudoShelf && (
           <button
             className={`btn ${selectMode ? 'btn-primary' : 'btn-ghost'}`}
             style={{ fontSize: 12, padding: '6px 12px' }}
@@ -877,7 +881,7 @@ export default function Library() {
           onClick={loadBooks}
           title="Reload library"
         >↻</button>
-        {activeShelfId !== CONTINUE_SERIES_SHELF_ID && (
+        {!isPseudoShelf && (
           <div className="view-toggle">
             <button className={view === 'grid'      ? 'active' : ''} onClick={() => saveView('grid')}      title="Grid">▦</button>
             <button className={view === 'list'      ? 'active' : ''} onClick={() => saveView('list')}      title="List">☰</button>
@@ -937,7 +941,7 @@ export default function Library() {
         <div className="filter-bar" style={{ paddingBottom: 8 }}>
           <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--rose-deep)' }}>{activeShelfName}</span>
           <button className="filter-chip" onClick={() => setActiveShelfId(null)}>✕ Exit shelf</button>
-          {activeShelfId !== CONTINUE_SERIES_SHELF_ID && (
+          {!isPseudoShelf && (
             <button className="filter-chip" style={{ color: '#c04040' }} onClick={deleteActiveShelf}>🗑️ Delete shelf</button>
           )}
         </div>
@@ -1041,8 +1045,8 @@ export default function Library() {
         </div>
       )}
 
-      {/* Continue reading */}
-      <ContinueReading refreshKey={continueRefreshKey} />
+      {/* Continue reading — main library page only, not inside shelves */}
+      {!activeShelfId && <ContinueReading refreshKey={continueRefreshKey} />}
 
       {/* Read Next */}
       <ReadNextSection onBookClick={id => setSelectedId(id)} />

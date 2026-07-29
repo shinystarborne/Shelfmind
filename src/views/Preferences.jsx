@@ -308,6 +308,14 @@ function ShortcutsSection() {
         [['Esc'], 'Close panel / back'],
       ],
     },
+    {
+      title: 'Audiobook Player',
+      rows: [
+        [['Space'], 'Play / pause'],
+        [['←'], 'Back 15 seconds'],
+        [['→'], 'Forward 15 seconds'],
+      ],
+    },
   ]
 
   return (
@@ -715,6 +723,36 @@ export default function Preferences({ onSave }) {
 
         {/* Removed files cleanup */}
         <RemovedFolderSection />
+
+        {/* Audiobookshelf */}
+        <div className="prefs-section">
+          <h3>🎧 Audiobookshelf</h3>
+          <p style={{ fontSize: 13, color: 'var(--text-soft)', marginBottom: 16, lineHeight: 1.6 }}>
+            Connect your self-hosted <strong>Audiobookshelf</strong> server to show an
+            Audiobooks shelf in the sidebar. Leave empty to hide it.
+          </p>
+          <div className="pref-row">
+            <div className="pref-label">Server URL</div>
+            <div className="pref-hint">The address of your Audiobookshelf server</div>
+            <input
+              className="pref-input"
+              value={prefs.abs_url || ''}
+              onChange={e => set('abs_url', e.target.value)}
+              placeholder="http://192.168.1.10:13378"
+            />
+          </div>
+          <div className="pref-row">
+            <div className="pref-label">API Token</div>
+            <div className="pref-hint">Audiobookshelf → Settings → Users → your user → API token</div>
+            <input
+              className="pref-input"
+              type="password"
+              value={prefs.abs_token || ''}
+              onChange={e => set('abs_token', e.target.value)}
+              placeholder="eyJhbGciOi…"
+            />
+          </div>
+        </div>
       </>)}
 
       {tab === 'data' && (<>

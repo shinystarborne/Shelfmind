@@ -17,13 +17,24 @@ function fmtDate(ts) {
   return ts ? new Date(ts * 1000).toLocaleDateString() : ''
 }
 
+function fmtTime(sec) {
+  if (!isFinite(sec) || sec < 0) sec = 0
+  const h = Math.floor(sec / 3600)
+  const m = Math.floor((sec % 3600) / 60)
+  const s = Math.floor(sec % 60)
+  return h
+    ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+    : `${m}:${String(s).padStart(2, '0')}`
+}
+
 // Stored highlight text keeps the book's raw whitespace (needed for anchoring);
 // for humans we collapse it.
 const clean = (t) => (t || '').replace(/\s+/g, ' ').trim()
 
 export default function Quotes() {
-  const { toast, prefs, refreshPrefs, openReader } = useApp()
+  const { toast, prefs, refreshPrefs, openReader, openAudiobook } = useApp()
   const [items, setItems]       = useState(null)
+  const [marks, setMarks]       = useState([])
   const [pathEdit, setPathEdit] = useState(null)   // null = closed, string = editing
   const [exporting, setExporting] = useState(false)
   const [editingNote, setEditingNote] = useState(null)   // hid being edited
@@ -31,9 +42,24 @@ export default function Quotes() {
 
   const load = useCallback(() => {
     fetch(`${API}/highlights`).then(r => r.json()).then(setItems).catch(() => setItems([]))
+    fetch(`${API}/audio-marks`).then(r => r.json()).then(setMarks).catch(() => {})
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  const removeMark = async (m) => {
+    await fetch(`${API}/audio-marks/${m.id}`, { method: 'DELETE' })
+    setMarks(list => list.filter(x => x.id !== m.id))
+    toast('Mark removed')
+  }
+
+  // Jump to one minute before the mark, so the listener catches the lead-up
+  const jumpToMark = (m) => {
+    openAudiobook(
+      { abs_id: m.abs_id, title: m.title, author: m.author, cover_url: m.cover_url, external_url: m.external_url },
+      Math.max(0, (m.time || 0) - 60),
+    )
+  }
 
   const quotesPath = prefs.quotes_json_path || ''
 
@@ -166,11 +192,43 @@ export default function Quotes() {
           </div>
         )}
 
-        {groups.length === 0 && (
+        {groups.length === 0 && marks.length === 0 && (
           <div className="empty-state" style={{ flex: 1 }}>
             <div className="empty-icon">❝</div>
             <h3>No highlights yet</h3>
             <p>Select any text while reading a book and pick a color — your highlights will gather here as quotes.</p>
+          </div>
+        )}
+
+        {/* Audio marks — audiobook bookmarks saved from the player */}
+        {marks.length > 0 && (
+          <div className="quotes-group">
+            <div className="quotes-group-head">
+              <div className="quotes-cover quotes-cover-ph">🎧</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="quotes-book-title">Audio Marks</div>
+                <div className="quotes-book-author">Audiobook bookmarks — jump back to one minute before the mark</div>
+              </div>
+              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{marks.length}</span>
+            </div>
+
+            {marks.map(m => (
+              <div key={m.id} className="quote-card" style={{ borderLeftColor: BAR_COLORS.blue }}>
+                <div className="quote-text">{m.title}</div>
+                <div className="quote-note">🎧 {m.author || 'Unknown'} — at {fmtTime(m.time)}</div>
+                <div className="quote-meta">
+                  <span>{fmtDate(m.created_at)}</span>
+                  <span className="quote-actions">
+                    <button title="Play from one minute before this mark" onClick={() => jumpToMark(m)}>▶</button>
+                    <button title="Open in Audiobookshelf" onClick={() => {
+                      if (window.electronAPI?.openExternal) window.electronAPI.openExternal(m.external_url)
+                      else window.open(m.external_url, '_blank')
+                    }}>↗</button>
+                    <button title="Remove mark" onClick={() => removeMark(m)}>🗑</button>
+                  </span>
+                </div>
+              </div>
+            ))}
           </div>
         )}
 

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, createContext, useContext } from 'react'
 import Library from './views/Library'
+import Audiobooks from './views/Audiobooks'
 import Insights from './views/Insights'
 import Preferences from './views/Preferences'
 import ReadingList from './views/ReadingList'
@@ -8,6 +9,7 @@ import Reader from './components/Reader'
 import PdfReader from './components/PdfReader'
 import Quotes from './views/Quotes'
 import UpdateNotesModal from './components/UpdateNotesModal'
+import AudiobookPlayer from './components/AudiobookPlayer'
 
 // When loaded in Electron (file://) hostname is empty — fall back to localhost.
 // When opened in a browser via QR code the hostname is the LAN IP, so API calls go to the right machine.
@@ -106,9 +108,10 @@ function UpdateBanner() {
 
 // ── Nav items ─────────────────────────────────────────────────────────────────
 const NAV = [
-  { id: 'library',  icon: '📚', label: 'Library' },
-  { id: 'quotes',   icon: '❝',  label: 'Quotes' },
-  { id: 'insights', icon: '✨', label: 'Insights' },
+  { id: 'library',    icon: '📚', label: 'Library' },
+  { id: 'audiobooks', icon: '🎧', label: 'Audiobooks' },
+  { id: 'quotes',     icon: '❝',  label: 'Quotes' },
+  { id: 'insights',   icon: '✨', label: 'Insights' },
 ]
 
 export default function App() {
@@ -256,6 +259,43 @@ export default function App() {
     setToasts(ts => ts.filter(t => t.id !== id))
   }, [])
 
+  // Audiobookshelf player — lives at app level so playback keeps going while
+  // navigating between views. player = { item, tracks, index, startOffset } | null.
+  const [player, setPlayer] = useState(null)
+
+  const openAudiobook = useCallback(async (item, resumeAtSec = 0) => {
+    setPlayer({ item, tracks: null, index: 0, startOffset: 0 })   // loading state
+    try {
+      const details = await fetch(`${API}/audiobooks/${item.abs_id}`).then(r => r.json())
+      if (!details.tracks?.length) {
+        toast('No audio tracks found for this audiobook')
+        setPlayer(null)
+        return
+      }
+      // ABS progress is book-level seconds; find the track it lands in
+      let index = 0, startOffset = 0, remaining = resumeAtSec
+      if (resumeAtSec > 0) {
+        for (const t of details.tracks) {
+          if (remaining <= t.duration) break
+          remaining -= t.duration
+          index++
+        }
+        if (index >= details.tracks.length) { index = 0; remaining = 0 }
+        startOffset = remaining
+      }
+      // The details endpoint can lack fields the list has — keep the list item's
+      // values as fallback so the player never shows "Unknown" incorrectly.
+      const merged = { ...details, author: details.author || item.author, series: details.series || item.series }
+      setPlayer({ item: merged, tracks: details.tracks, index, startOffset })
+    } catch {
+      toast('Could not load audiobook')
+      setPlayer(null)
+    }
+  }, [toast])
+
+  const closePlayer    = useCallback(() => setPlayer(null), [])
+  const setPlayerIndex = useCallback((index) => setPlayer(p => (p ? { ...p, index } : p)), [])
+
   useEffect(() => {
     async function init() {
       // In Electron, ask main process for the actual port (may have bumped from 3001)
@@ -307,6 +347,7 @@ export default function App() {
       libraryNudges, nudgeLibrary, dismissNudge,
       updateState, checkForUpdate, downloadUpdate, installUpdateNow, dismissUpdateBanner,
       shelves, activeShelfId, setActiveShelfId, loadShelves, continueSeriesCount,
+      player, openAudiobook, closePlayer, setPlayerIndex,
     }}>
       <div className={`app-shell${sidebarOpen ? '' : ' sidebar-collapsed'}`}>
         {/* Sidebar */}
@@ -327,7 +368,7 @@ export default function App() {
 
             <nav className="nav-section">
               <div className="nav-section-label">Menu</div>
-              {NAV.map(n => (
+              {NAV.filter(n => n.id !== 'audiobooks' || prefs.abs_url).map(n => (
                 <button
                   key={n.id}
                   className={`nav-item ${view === n.id && !activeShelfId ? 'active' : ''}`}
@@ -440,6 +481,7 @@ export default function App() {
         {/* Main */}
         <main className="main-content">
           {view === 'library'     && <Library />}
+          {view === 'audiobooks'  && <Audiobooks />}
           {view === 'quotes'      && <Quotes />}
           {view === 'insights'    && <Insights />}
           {view === 'preferences' && <Preferences onSave={refreshPrefs} />}
@@ -461,7 +503,7 @@ export default function App() {
 
         {/* Mobile bottom nav */}
         <nav className="mobile-bottom-nav">
-          {[...NAV, { id: 'preferences', icon: '⚙️', label: 'Prefs' }].map(n => (
+          {[...NAV.filter(n => n.id !== 'audiobooks' || prefs.abs_url), { id: 'preferences', icon: '⚙️', label: 'Prefs' }].map(n => (
             <button
               key={n.id}
               className={`mobile-nav-btn ${view === n.id ? 'active' : ''}`}
@@ -513,6 +555,7 @@ export default function App() {
       )}
 
       <Toasts toasts={toasts} onDismiss={dismissToast} />
+      {player && <AudiobookPlayer />}
       <UpdateBanner />
       {updateState.status === 'ready' && !readyModalDismissed && (
         <UpdateNotesModal

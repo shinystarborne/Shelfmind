@@ -9,6 +9,7 @@ const { startWatching } = require('./watcher')
 const { enrichAll, enrichOne } = require('./enricher')
 const { writeEpubMeta } = require('./epubWriter')
 const { indexAll, extractBookText, extractPdfText } = require('./searchIndexer')
+const { getAudiobooks, getAudiobook, getCover: getAbsCover, updateProgress: absUpdateProgress, getListeningStats } = require('./abs')
 
 let scanState   = { running: false, current: 0, total: 0, added: 0, done: false, error: null }
 let enrichState = { running: false, current: 0, total: 0, success: 0, done: false }
@@ -515,7 +516,7 @@ function startServer(port = 3001) {
     app.get('/api/preferences', (_, res) => res.json(store.getPrefs()))
 
     app.put('/api/preferences', (req, res) => {
-      const allowed = ['library_path', 'kindle_email', 'kindle_mode', 'theme', 'default_view', 'reading_goal', 'quotes_json_path', 'beta_updates']
+      const allowed = ['library_path', 'kindle_email', 'kindle_mode', 'theme', 'default_view', 'reading_goal', 'quotes_json_path', 'beta_updates', 'abs_url', 'abs_token']
       const update  = {}
       for (const k of allowed) { if (k in req.body) update[k] = req.body[k] }
       store.setPrefs(update)
@@ -876,6 +877,72 @@ function startServer(port = 3001) {
     // Pinned, always-present pseudo-shelf: not user-created, computed fresh from
     // series/read-status every time rather than saved filter criteria.
     app.get('/api/continue-series', (_, res) => res.json(store.getContinueSeriesBooks()))
+
+    // ── Audiobookshelf ───────────────────────────────────────────────────────────
+    // Pinned pseudo-shelf fed by the user's external Audiobookshelf server.
+    // Covers are proxied through us because ABS requires the Bearer token,
+    // which the frontend can't attach to a plain <img> request.
+
+    app.get('/api/audiobooks', async (_, res) => {
+      try {
+        res.json(await getAudiobooks(store.getPrefs()))
+      } catch (err) {
+        res.status(500).json({ error: err.message })
+      }
+    })
+
+    app.get('/api/audiobooks/:id', async (req, res) => {
+      try {
+        const book = await getAudiobook(store.getPrefs(), req.params.id)
+        if (!book) return res.status(404).json({ error: 'Not found' })
+        res.json(book)
+      } catch (err) {
+        res.status(500).json({ error: err.message })
+      }
+    })
+
+    app.get('/api/audiobooks/:id/cover', async (req, res) => {
+      try {
+        const cover = await getAbsCover(store.getPrefs(), req.params.id)
+        if (!cover) return res.status(404).json({ error: 'Not found' })
+        res.type(cover.contentType).send(cover.body)
+      } catch (err) {
+        res.status(500).json({ error: err.message })
+      }
+    })
+
+    // Write listening progress (position / finished) back to ABS
+    app.post('/api/audiobooks/:id/progress', async (req, res) => {
+      try {
+        const { currentTime = 0, duration = 0, progress = 0, isFinished } = req.body || {}
+        const ok = await absUpdateProgress(store.getPrefs(), req.params.id, { currentTime, duration, progress, isFinished })
+        res.json({ ok })
+      } catch (err) {
+        res.status(500).json({ error: err.message })
+      }
+    })
+
+    // Listening stats for the Insights page
+    app.get('/api/audiobooks-stats', async (_, res) => {
+      try {
+        res.json(await getListeningStats(store.getPrefs()))
+      } catch (err) {
+        res.status(500).json({ error: err.message })
+      }
+    })
+
+    // Audio marks — local bookmarks for audiobooks, surfaced in the Quotes view
+    app.get('/api/audio-marks', (_, res) => res.json(store.getAudioMarks()))
+
+    app.post('/api/audio-marks', (req, res) => {
+      if (!req.body?.abs_id) return res.status(400).json({ error: 'abs_id required' })
+      res.json(store.createAudioMark(req.body))
+    })
+
+    app.delete('/api/audio-marks/:id', (req, res) => {
+      if (!store.deleteAudioMark(req.params.id)) return res.status(404).json({ error: 'Not found' })
+      res.json({ ok: true })
+    })
 
     // ── PDF Tabs ───────────────────────────────────────────────────────────────
 
