@@ -80,7 +80,7 @@ function UpdateBanner() {
 
   return (
     <div className="update-banner" style={{
-      position: 'fixed', top: 12, right: 12, zIndex: 500,
+      position: 'fixed', top: 'calc(var(--titlebar-h) + 8px)', right: 12, zIndex: 500,
       display: 'flex', alignItems: 'center', gap: 10,
       background: 'var(--cream)', border: '1px solid var(--border)',
       borderRadius: 'var(--radius-md)', padding: '10px 14px', boxShadow: 'var(--shadow-lift)',

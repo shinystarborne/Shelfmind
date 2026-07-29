@@ -36,6 +36,10 @@
 
   --nav-width:   220px;
   --drawer-width: 360px;
+  /* Matches electron/main.js's titleBarOverlay.height — anything anchored to
+     the window's top-right corner needs to clear this or it renders behind
+     the native minimize/maximize/close buttons. */
+  --titlebar-h:  36px;
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -601,7 +605,7 @@ h3 { font-size: 18px; }
 }
 .drawer-close {
   position: absolute;
-  top: 12px; right: 12px;
+  top: calc(var(--titlebar-h) + 8px); right: 12px;
   width: 32px; height: 32px;
   border: none;
   background: rgba(255,255,255,0.6);
