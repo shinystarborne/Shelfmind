@@ -388,17 +388,50 @@ function startServer(port = 3001) {
 
     // ── Scan ───────────────────────────────────────────────────────────────────
 
+    // Recursively collect every PDF under a folder (skips hidden entries).
+    function walkPdfFolder(dir) {
+      const pdfs = []
+      const walk = (d, depth) => {
+        if (depth > 6) return
+        let entries
+        try { entries = fs.readdirSync(d, { withFileTypes: true }) } catch { return }
+        for (const e of entries) {
+          if (e.name.startsWith('.')) continue
+          const full = path.join(d, e.name)
+          if (e.isDirectory()) walk(full, depth + 1)
+          else if (e.isFile() && e.name.toLowerCase().endsWith('.pdf')) pdfs.push(full)
+        }
+      }
+      walk(dir, 0)
+      return pdfs
+    }
+
+    // Import new PDFs from every PDF tab that has a folder set — runs as part of
+    // the main scan so tabs stay in sync with their folders just like the library.
+    function scanPdfTabFolders() {
+      let pdfsAdded = 0
+      for (const tab of store.getPdfTabs()) {
+        if (!tab.folder_path || !fs.existsSync(tab.folder_path)) continue
+        const added = store.addPdfDocs(tab.id, walkPdfFolder(tab.folder_path))
+        pdfsAdded += added?.length || 0
+      }
+      return pdfsAdded
+    }
+
     function runScan() {
       if (scanState.running) return
       const libraryPath = store.getPref('library_path') || 'E:\\Books'
-      scanState = { running: true, current: 0, total: 0, added: 0, done: false, error: null }
+      scanState = { running: true, current: 0, total: 0, added: 0, pdfsAdded: 0, done: false, error: null }
 
       scan(store, libraryPath, progress => {
         scanState.current = progress.current
         scanState.total   = progress.total
         scanState.added   = progress.added || 0
       })
-        .then(result => { scanState = { ...result, running: false, done: true, error: null } })
+        .then(result => {
+          const pdfsAdded = scanPdfTabFolders()
+          scanState = { ...result, pdfsAdded, running: false, done: true, error: null }
+        })
         .catch(err  => { scanState = { ...scanState, running: false, done: true, error: err.message } })
     }
 
@@ -977,20 +1010,7 @@ function startServer(port = 3001) {
       if (!tab.folder_path) return res.status(400).json({ error: 'This tab has no folder set' })
       if (!fs.existsSync(tab.folder_path)) return res.status(400).json({ error: `Folder not found: ${tab.folder_path}` })
 
-      const pdfs = []
-      const walk = (dir, depth) => {
-        if (depth > 6) return
-        let entries
-        try { entries = fs.readdirSync(dir, { withFileTypes: true }) } catch { return }
-        for (const e of entries) {
-          if (e.name.startsWith('.')) continue
-          const full = path.join(dir, e.name)
-          if (e.isDirectory()) walk(full, depth + 1)
-          else if (e.isFile() && e.name.toLowerCase().endsWith('.pdf')) pdfs.push(full)
-        }
-      }
-      walk(tab.folder_path, 0)
-
+      const pdfs = walkPdfFolder(tab.folder_path)
       const added = store.addPdfDocs(req.params.id, pdfs)
       res.json({ ok: true, found: pdfs.length, added: added.length, skipped: pdfs.length - added.length })
     })

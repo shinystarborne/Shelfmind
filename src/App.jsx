@@ -67,7 +67,7 @@ function ScanButton({ onScanDone }) {
       className={`btn btn-secondary btn-scan ${state.running ? 'scanning' : ''}`}
       onClick={triggerScan}
       disabled={state.running}
-      title={state.done ? `Last scan: +${state.added} books` : ''}
+      title={state.done ? `Last scan: +${state.added} books${state.pdfsAdded ? `, +${state.pdfsAdded} PDFs` : ''}` : ''}
     >
       <span className={state.running ? 'spin' : ''}>↻</span>
       {state.running ? `Scanning… ${pct}%` : 'Scan'}
@@ -335,10 +335,14 @@ export default function App() {
   }, [prefs.theme])
 
   const handleScanDone = useCallback((result) => {
-    toast(`Scan complete — ${result.added ?? 0} new books added`, 'success')
+    const parts = [`${result.added ?? 0} new books`]
+    if (result.pdfsAdded > 0) parts.push(`${result.pdfsAdded} new PDF${result.pdfsAdded !== 1 ? 's' : ''}`)
+    toast(`Scan complete — ${parts.join(', ')}`, 'success')
     fetch(`${API}/books`).then(r => r.json()).then(b => setBookCount(b.length)).catch(() => {})
+    loadPdfTabs()
     if (result.added > 0) nudgeLibrary({ enrich: true, index: true })
-  }, [toast, nudgeLibrary])
+    else if (result.pdfsAdded > 0) nudgeLibrary({ index: true })
+  }, [toast, nudgeLibrary, loadPdfTabs])
 
   const refreshPrefs = () => fetch(`${API}/preferences`).then(r => r.json()).then(setPrefs)
 
@@ -455,20 +459,14 @@ export default function App() {
               )}
             </nav>
 
-            <div className="divider" style={{ margin: '0 16px' }} />
-
-            <nav className="nav-section">
-              <button
-                className={`nav-item ${view === 'preferences' ? 'active' : ''}`}
-                onClick={() => setView('preferences')}
-              >
-                <span className="nav-icon">⚙️</span>
-                Preferences
-              </button>
-            </nav>
-
             <div className="sidebar-footer" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <ScanButton onScanDone={handleScanDone} />
+              <button
+                className="theme-toggle"
+                onClick={() => setView('preferences')}
+                title="Preferences"
+                style={view === 'preferences' ? { background: 'var(--rose)', borderColor: 'var(--rose)', color: 'var(--brown)' } : undefined}
+              >⚙️</button>
               <button
                 className="theme-toggle"
                 onClick={toggleTheme}
