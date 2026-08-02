@@ -1,4 +1,7 @@
 ## New
-- **Color palettes** — Preferences → General → Appearance now lets you pick the app's main colors: **Rose** (the classic beige), **Ocean** (cool slate blue), **Forest** (moss green), and **Lavender** (muted purple). Each palette has its own light *and* dark variant — so if the warm brown dark mode wasn't your thing, try Ocean or Lavender's cooler dark. Applies instantly, and the native window buttons follow along.
+- **PDF tabs scan with the library** — the main **Scan** button now also sweeps the folder of every PDF tab that has one set (e.g. your Pattern tab) and imports new PDFs automatically — no more per-tab "Scan folder" clicks. This also happens on automatic folder-change rescans, and the scan summary tells you how many PDFs were added.
 
-Everything from 1.10.2-beta.0 (Audiobookshelf integration, in-app player, listening insights) is included as well.
+## Changed
+- **Tidier sidebar** — the full-width *Preferences* button is gone; a small ⚙️ gear icon now sits in the bottom row next to Scan and the light/dark toggle.
+
+Everything from 1.10.2-beta.1 (color palettes) and 1.10.2-beta.0 (Audiobookshelf integration, in-app player, listening insights) is included as well.

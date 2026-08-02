@@ -12,6 +12,7 @@ dist-electron/
 
 # Release / installer output
 release/
+release-b6/
 
 # Logs
 logs/
