@@ -1105,10 +1105,10 @@ class Store {
     return { ...t, docs }
   }
 
-  createPdfTab(name) {
+  createPdfTab(name, folderPath = '') {
     const id  = Date.now().toString(36) + Math.random().toString(36).slice(2)
     const now = Math.floor(Date.now() / 1000)
-    const tab = { id, name, folder_path: '', created_at: now, updated_at: now }
+    const tab = { id, name, folder_path: folderPath, created_at: now, updated_at: now }
     this.pdfTabs.push(tab)
     writeJson(this._pdfTabsFile, this.pdfTabs)
     return tab

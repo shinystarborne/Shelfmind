@@ -198,9 +198,10 @@ function BackupSection() {
 
 // ── PDF Tabs management ───────────────────────────────────────────────────────
 function PdfTabsSection() {
-  const { toast, loadPdfTabs } = useApp()
+  const { toast, loadPdfTabs, nudgeLibrary } = useApp()
   const [tabs, setTabs]         = useState([])
   const [newName, setNewName]   = useState('')
+  const [newFolder, setNewFolder] = useState('')
   const [drafts, setDrafts]     = useState({})
   const [confirmId, setConfirmId] = useState(null)
 
@@ -209,17 +210,59 @@ function PdfTabsSection() {
 
   const refresh = () => { load(); loadPdfTabs() }
 
+  const pickFolder = async () => {
+    if (!window.electronAPI?.pickFolder) return null
+    return await window.electronAPI.pickFolder()
+  }
+
+  // Import new PDFs from a tab's folder right after it's set/changed
+  const scanTabFolder = async (tab) => {
+    const r = await fetch(`${API}/pdf-tabs/${tab.id}/scan-folder`, { method: 'POST' })
+    const result = await r.json().catch(() => ({}))
+    if (!r.ok) { toast(result.error || 'Folder scan failed', 'error'); return }
+    toast(result.added
+      ? `"${tab.name}": found ${result.found} PDF${result.found !== 1 ? 's' : ''} — added ${result.added} new`
+      : `"${tab.name}": no new PDFs (${result.found} found, all already in this tab)`,
+      result.added ? 'success' : '')
+    if (result.added > 0) nudgeLibrary({ index: true })
+  }
+
   const createTab = async () => {
-    const name = newName.trim()
+    const name   = newName.trim()
+    const folder = newFolder.trim()
     if (!name) return
-    setNewName('')
-    await fetch(`${API}/pdf-tabs`, {
+    const r = await fetch(`${API}/pdf-tabs`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ name }),
+      body:    JSON.stringify({ name, folder_path: folder }),
     })
+    const tab = await r.json().catch(() => ({}))
+    if (!r.ok) { toast(tab.error || 'Could not create tab', 'error'); return }
+    setNewName('')
+    setNewFolder('')
     toast(`Tab "${name}" created`, 'success')
     refresh()
+    if (folder) scanTabFolder(tab)
+  }
+
+  const setTabFolder = async (tab, folder) => {
+    const r = await fetch(`${API}/pdf-tabs/${tab.id}`, {
+      method:  'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ folder_path: folder }),
+    })
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}))
+      toast(err.error || 'Could not save folder', 'error')
+      return
+    }
+    refresh()
+    if (folder) scanTabFolder(tab)
+  }
+
+  const browseTabFolder = async (tab) => {
+    const folder = await pickFolder()
+    if (folder) setTabFolder(tab, folder)
   }
 
   const renameTab = async (tab) => {
@@ -246,48 +289,94 @@ function PdfTabsSection() {
       <h3>📄 PDF Tabs</h3>
       <p style={{ fontSize: 13, color: 'var(--text-soft)', marginBottom: 16, lineHeight: 1.6 }}>
         Create tabs to organise your PDF documents — they show up in the sidebar.
-        Each tab holds its own set of PDFs with tags and notes.
+        Each tab can point at its own folder (kept separate from your ebooks), and new PDFs in that
+        folder are picked up automatically by the library scan.
       </p>
 
       {tabs.map(tab => (
-        <div key={tab.id} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
-          <input
-            className="pref-input"
-            style={{ flex: 1, marginBottom: 0 }}
-            value={drafts[tab.id] ?? tab.name}
-            onChange={e => setDrafts(d => ({ ...d, [tab.id]: e.target.value }))}
-            onKeyDown={e => { if (e.key === 'Enter') renameTab(tab) }}
-            onBlur={() => { if (tab.id in drafts) renameTab(tab) }}
-          />
-          <span style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-            {tab.doc_count} PDF{tab.doc_count !== 1 ? 's' : ''}
-          </span>
-          {confirmId === tab.id ? (
-            <>
-              <button className="btn btn-ghost" style={{ color: '#c04040', fontSize: 12 }} onClick={() => deleteTab(tab)}>Delete?</button>
-              <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => setConfirmId(null)}>✕</button>
-            </>
-          ) : (
-            <button
-              className="btn btn-ghost"
-              style={{ color: '#c04040', fontSize: 12 }}
-              title="Delete tab (files stay on disk)"
-              onClick={() => setConfirmId(tab.id)}
-            >🗑️</button>
-          )}
+        <div key={tab.id} style={{ marginBottom: 12 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <input
+              className="pref-input"
+              style={{ flex: 1, marginBottom: 0 }}
+              value={drafts[tab.id] ?? tab.name}
+              onChange={e => setDrafts(d => ({ ...d, [tab.id]: e.target.value }))}
+              onKeyDown={e => { if (e.key === 'Enter') renameTab(tab) }}
+              onBlur={() => { if (tab.id in drafts) renameTab(tab) }}
+            />
+            <span style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+              {tab.doc_count} PDF{tab.doc_count !== 1 ? 's' : ''}
+            </span>
+            {confirmId === tab.id ? (
+              <>
+                <button className="btn btn-ghost" style={{ color: '#c04040', fontSize: 12 }} onClick={() => deleteTab(tab)}>Delete?</button>
+                <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => setConfirmId(null)}>✕</button>
+              </>
+            ) : (
+              <button
+                className="btn btn-ghost"
+                style={{ color: '#c04040', fontSize: 12 }}
+                title="Delete tab (files stay on disk)"
+                onClick={() => setConfirmId(tab.id)}
+              >🗑️</button>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
+            <span
+              style={{ flex: 1, fontSize: 11, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+              title={tab.folder_path || undefined}
+            >
+              {tab.folder_path ? `📂 ${tab.folder_path}` : 'No folder linked'}
+            </span>
+            {window.electronAPI?.pickFolder && (
+              <button
+                className="btn btn-ghost"
+                style={{ fontSize: 11, padding: '2px 8px' }}
+                title="Choose the folder this tab imports PDFs from"
+                onClick={() => browseTabFolder(tab)}
+              >📂 {tab.folder_path ? 'Change…' : 'Choose folder…'}</button>
+            )}
+            {tab.folder_path && (
+              <button
+                className="btn btn-ghost"
+                style={{ fontSize: 11, padding: '2px 8px' }}
+                title="Unlink the folder (imported PDFs stay in the tab)"
+                onClick={() => setTabFolder(tab, '')}
+              >✕ Clear</button>
+            )}
+          </div>
         </div>
       ))}
 
-      <div style={{ display: 'flex', gap: 8, marginTop: tabs.length ? 12 : 0 }}>
-        <input
-          className="pref-input"
-          style={{ flex: 1, marginBottom: 0 }}
-          placeholder="New tab name (e.g. Sheet Music, Manuals)…"
-          value={newName}
-          onChange={e => setNewName(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') createTab() }}
-        />
-        <button className="btn btn-secondary" onClick={createTab} disabled={!newName.trim()}>+ Create Tab</button>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: tabs.length ? 12 : 0 }}>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input
+            className="pref-input"
+            style={{ flex: 1, marginBottom: 0 }}
+            placeholder="New tab name (e.g. Sheet Music, Manuals)…"
+            value={newName}
+            onChange={e => setNewName(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') createTab() }}
+          />
+          <button className="btn btn-secondary" onClick={createTab} disabled={!newName.trim()}>+ Create Tab</button>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input
+            className="pref-input"
+            style={{ flex: 1, marginBottom: 0 }}
+            placeholder="PDF folder for this tab (optional) — e.g. D:\\PDFs"
+            value={newFolder}
+            onChange={e => setNewFolder(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') createTab() }}
+          />
+          {window.electronAPI?.pickFolder && (
+            <button
+              className="btn btn-ghost"
+              style={{ fontSize: 12, whiteSpace: 'nowrap' }}
+              onClick={async () => { const f = await pickFolder(); if (f) setNewFolder(f) }}
+            >📂 Browse…</button>
+          )}
+        </div>
       </div>
     </div>
   )

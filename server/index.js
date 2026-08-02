@@ -445,7 +445,15 @@ function startServer(port = 3001) {
 
     // Auto-rescan whenever the library folder changes on disk (new/removed/edited
     // files), so users don't have to remember to click "Scan Library".
-    startWatching(store.getPref('library_path') || 'E:\\Books', runScan)
+    // Also watches every PDF tab folder so new PDFs get swept in the same way.
+    function watchAllFolders() {
+      const folders = [store.getPref('library_path') || 'E:\\Books']
+      for (const tab of store.getPdfTabs()) {
+        if (tab.folder_path) folders.push(tab.folder_path)
+      }
+      startWatching(folders, runScan)
+    }
+    watchAllFolders()
 
     // ── Enrich ─────────────────────────────────────────────────────────────────
 
@@ -553,7 +561,7 @@ function startServer(port = 3001) {
       const update  = {}
       for (const k of allowed) { if (k in req.body) update[k] = req.body[k] }
       store.setPrefs(update)
-      if ('library_path' in update) startWatching(update.library_path || 'E:\\Books', runScan)
+      if ('library_path' in update) watchAllFolders()
       res.json(store.getPrefs())
     })
 
@@ -982,9 +990,14 @@ function startServer(port = 3001) {
     app.get('/api/pdf-tabs', (_, res) => res.json(store.getPdfTabs()))
 
     app.post('/api/pdf-tabs', (req, res) => {
-      const { name } = req.body
+      const { name, folder_path: folderPath } = req.body
       if (!name?.trim()) return res.status(400).json({ error: 'name required' })
-      res.json(store.createPdfTab(name.trim()))
+      if (folderPath && !fs.existsSync(folderPath)) {
+        return res.status(400).json({ error: `Folder not found: ${folderPath}` })
+      }
+      const tab = store.createPdfTab(name.trim(), folderPath || '')
+      watchAllFolders()
+      res.json(tab)
     })
 
     app.get('/api/pdf-tabs/:id', (req, res) => {
@@ -1000,6 +1013,7 @@ function startServer(port = 3001) {
       }
       const tab = store.updatePdfTab(req.params.id, req.body)
       if (!tab) return res.status(404).json({ error: 'Not found' })
+      watchAllFolders()
       res.json(tab)
     })
 
@@ -1017,6 +1031,7 @@ function startServer(port = 3001) {
 
     app.delete('/api/pdf-tabs/:id', (req, res) => {
       if (!store.deletePdfTab(req.params.id)) return res.status(404).json({ error: 'Not found' })
+      watchAllFolders()
       res.json({ ok: true })
     })
 
