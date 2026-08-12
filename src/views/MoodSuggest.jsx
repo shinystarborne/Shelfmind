@@ -91,6 +91,21 @@ export default function MoodSuggest() {
     }).catch(() => {})
   }, [])
 
+  // Poll while a profiling run is active so the counter updates live; refresh
+  // the chip vocabulary when the run finishes (new profiles have landed).
+  useEffect(() => {
+    if (!status?.running) return
+    const iv = setInterval(async () => {
+      const s = await fetch(`${API}/mood/status`).then(r => r.json()).catch(() => null)
+      if (!s) return
+      setStatus(s)
+      if (!s.running) {
+        fetch(`${API}/mood/tags`).then(r => r.json()).then(d => setTags(d.tags || [])).catch(() => {})
+      }
+    }, 2000)
+    return () => clearInterval(iv)
+  }, [status?.running])
+
   useEffect(() => {
     if (!prefs.abs_url) return
     fetch(`${API}/audiobooks`).then(r => r.json()).then(d => {

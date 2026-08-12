@@ -17,7 +17,15 @@ const { makeThumb, backfillThumbs, thumbPath } = require('./thumbs')
 let scanState   = { running: false, current: 0, total: 0, added: 0, done: false, error: null }
 let enrichState = { running: false, current: 0, total: 0, success: 0, done: false }
 let indexState  = { running: false, current: 0, total: 0, success: 0, done: false }
-let moodProfileState = { running: false, current: 0, total: 0, success: 0, failed: 0, done: false, title: '' }
+let moodProfileState = { running: false, current: 0, total: 0, success: 0, failed: 0, done: false, stopped: false, title: '', log: [] }
+let moodStopRequested = false
+
+// Ring-buffer log for the mood profiler — surfaced in Preferences so failures
+// (bad model id, no credits, rate limits) are visible instead of silent.
+function moodLog(msg) {
+  moodProfileState.log.push({ t: Date.now(), msg })
+  if (moodProfileState.log.length > 200) moodProfileState.log.shift()
+}
 
 // One-time FTS migration: index any searchtext/*.json not yet in search.db.
 // Reuses indexState so the existing "Building search index…" UI reports it.
@@ -559,12 +567,24 @@ function startServer(port = 3001) {
       }
       const force = req.body?.force === true
 
-      moodProfileState = { running: true, current: 0, total: 0, success: 0, failed: 0, done: false, title: '' }
+      moodStopRequested = false
+      moodProfileState = { running: true, current: 0, total: 0, success: 0, failed: 0, done: false, stopped: false, title: '', log: [] }
       res.json({ ok: true })
 
-      profileAll(store, store.getPrefs(), p => { Object.assign(moodProfileState, p) }, force)
+      profileAll(store, store.getPrefs(), {
+        onProgress: p => { Object.assign(moodProfileState, p) },
+        onLog:      moodLog,
+        shouldStop: () => moodStopRequested,
+      }, force)
         .then(r  => { moodProfileState = { ...moodProfileState, ...r, running: false, done: true, title: '' } })
         .catch(() => { moodProfileState.running = false; moodProfileState.done = true })
+    })
+
+    app.post('/api/mood/profile-stop', (_, res) => {
+      if (!moodProfileState.running) return res.json({ ok: false, message: 'Not profiling' })
+      moodStopRequested = true
+      moodLog('Stop requested — finishing current item…')
+      res.json({ ok: true })
     })
 
     app.post('/api/mood/profile/:id', async (req, res) => {
