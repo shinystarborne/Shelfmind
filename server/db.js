@@ -794,7 +794,8 @@ class Store {
       }
     }
     mostReread.sort((a, b) => b.read_count - a.read_count)
-    const rereads = { total: totalRereads, books: mostReread.slice(0, 10) }
+    // bookCount is the real number of reread books — books is capped at 10 for display
+    const rereads = { total: totalRereads, bookCount: mostReread.length, books: mostReread.slice(0, 10) }
 
     // Subjects/genres among read books — gives a "what you read most" breakdown
     const subCounts = {}

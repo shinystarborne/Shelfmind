@@ -143,7 +143,7 @@ export default function Insights() {
           <StatCard
             value={data.rereads.total}
             label="Rereads"
-            sub={data.rereads.total > 0 ? `across ${data.rereads.books.length} book${data.rereads.books.length === 1 ? '' : 's'}` : undefined}
+            sub={data.rereads.total > 0 ? `across ${data.rereads.bookCount} book${data.rereads.bookCount === 1 ? '' : 's'}` : undefined}
             accent={AMBER}
           />
         </div>
@@ -309,7 +309,7 @@ export default function Insights() {
                   <div key={b.book_id} className="series-row">
                     <div className="series-row-label">
                       <span className="sname">{b.title}{b.author ? ` — ${b.author}` : ''}</span>
-                      <span className="scount">read {b.read_count}×</span>
+                      <span className="scount">reread {b.read_count - 1}×</span>
                     </div>
                   </div>
                 ))}
