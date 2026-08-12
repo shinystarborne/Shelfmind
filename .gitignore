@@ -1,6 +1,7 @@
 # Private project notes / AI workspace (not for public repo)
 .shelfai/
 .claude/
+AGENTS.md
 
 # Dependencies
 node_modules/
@@ -11,6 +12,7 @@ dist-electron/
 
 # Release / installer output
 release/
+release-b6/
 
 # Logs
 logs/

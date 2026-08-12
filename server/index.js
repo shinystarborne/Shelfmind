@@ -9,10 +9,26 @@ const { startWatching } = require('./watcher')
 const { enrichAll, enrichOne } = require('./enricher')
 const { writeEpubMeta } = require('./epubWriter')
 const { indexAll, extractBookText, extractPdfText } = require('./searchIndexer')
+const { getAudiobooks, getAudiobook, getCover: getAbsCover, updateProgress: absUpdateProgress, getListeningStats } = require('./abs')
+const { makeThumb, backfillThumbs, thumbPath } = require('./thumbs')
 
 let scanState   = { running: false, current: 0, total: 0, added: 0, done: false, error: null }
 let enrichState = { running: false, current: 0, total: 0, success: 0, done: false }
 let indexState  = { running: false, current: 0, total: 0, success: 0, done: false }
+
+// One-time FTS migration: index any searchtext/*.json not yet in search.db.
+// Reuses indexState so the existing "Building search index…" UI reports it.
+function maybeBackfillSearchIndex(store, onDone) {
+  const idx = store.searchIndex
+  if (!idx || indexState.running) { onDone?.(); return }
+  const pending = idx.pendingBackfill(store.searchTextDir)
+  if (pending.length === 0) { onDone?.(); return }
+  indexState = { running: true, current: 0, total: pending.length, success: 0, done: false }
+  idx.backfill(store.searchTextDir, p => { Object.assign(indexState, p) }, pending)
+    .then(r  => { indexState = { ...r, running: false, done: true } })
+    .catch(() => { indexState.running = false; indexState.done = true })
+    .finally(() => onDone?.())
+}
 
 function getRemovedDir(store) {
   const libraryPath = store.getPref('library_path') || 'E:\\Books'
@@ -41,8 +57,30 @@ function startServer(port = 3001) {
     app.use(cors())
     app.use(express.json({ limit: '25mb' }))
 
+    // Kick off the one-time FTS index migration in the background (no-op once
+    // done), then backfill cover thumbnails — both one-time disk-heavy jobs,
+    // so run them sequentially, not at once.
+    maybeBackfillSearchIndex(store, () => {
+      backfillThumbs(store.coversDir, p => {
+        if (p.current === p.total && p.total > 0) console.log(`Cover thumbnails: ${p.success}/${p.total} generated`)
+      }).catch(() => {})
+    })
+
     // Serve book covers as static files
     app.use('/covers', express.static(path.join(store.coversDir)))
+
+    // Missing thumbnail → generate it on demand from the original cover
+    // (the backfill covers the bulk; this catches stragglers and keeps the
+    // frontend free of file-existence checks). No original → 404.
+    app.get('/covers/thumbs/:file', async (req, res) => {
+      const id = req.params.file.replace(/\.jpg$/i, '')
+      try {
+        if (await makeThumb(store.coversDir, id)) {
+          return res.sendFile(thumbPath(store.coversDir, id))
+        }
+      } catch { /* fall through to 404 */ }
+      res.status(404).end()
+    })
 
     // ── Books ──────────────────────────────────────────────────────────────────
 
@@ -387,18 +425,58 @@ function startServer(port = 3001) {
 
     // ── Scan ───────────────────────────────────────────────────────────────────
 
+    // Recursively collect every PDF under a folder (skips hidden entries).
+    function walkPdfFolder(dir) {
+      const pdfs = []
+      const walk = (d, depth) => {
+        if (depth > 6) return
+        let entries
+        try { entries = fs.readdirSync(d, { withFileTypes: true }) } catch { return }
+        for (const e of entries) {
+          if (e.name.startsWith('.')) continue
+          const full = path.join(d, e.name)
+          if (e.isDirectory()) walk(full, depth + 1)
+          else if (e.isFile() && e.name.toLowerCase().endsWith('.pdf')) pdfs.push(full)
+        }
+      }
+      walk(dir, 0)
+      return pdfs
+    }
+
+    // Import new PDFs from every PDF tab that has a folder set — runs as part of
+    // the main scan so tabs stay in sync with their folders just like the library.
+    function scanPdfTabFolders() {
+      let pdfsAdded = 0
+      for (const tab of store.getPdfTabs()) {
+        if (!tab.folder_path || !fs.existsSync(tab.folder_path)) continue
+        const added = store.addPdfDocs(tab.id, walkPdfFolder(tab.folder_path))
+        pdfsAdded += added?.length || 0
+      }
+      return pdfsAdded
+    }
+
+    // A scan triggered while one is already running isn't dropped — it sets a
+    // dirty flag and runs again right after, so the watcher can't lose changes
+    // or pile up overlapping scans on a large library (a no-change full scan
+    // takes seconds there).
+    let scanQueued = false
     function runScan() {
-      if (scanState.running) return
+      if (scanState.running) { scanQueued = true; return }
+      scanQueued = false
       const libraryPath = store.getPref('library_path') || 'E:\\Books'
-      scanState = { running: true, current: 0, total: 0, added: 0, done: false, error: null }
+      scanState = { running: true, current: 0, total: 0, added: 0, pdfsAdded: 0, done: false, error: null }
 
       scan(store, libraryPath, progress => {
         scanState.current = progress.current
         scanState.total   = progress.total
         scanState.added   = progress.added || 0
       })
-        .then(result => { scanState = { ...result, running: false, done: true, error: null } })
+        .then(result => {
+          const pdfsAdded = scanPdfTabFolders()
+          scanState = { ...result, pdfsAdded, running: false, done: true, error: null }
+        })
         .catch(err  => { scanState = { ...scanState, running: false, done: true, error: err.message } })
+        .finally(() => { if (scanQueued) runScan() })
     }
 
     app.post('/api/scan', async (req, res) => {
@@ -411,7 +489,15 @@ function startServer(port = 3001) {
 
     // Auto-rescan whenever the library folder changes on disk (new/removed/edited
     // files), so users don't have to remember to click "Scan Library".
-    startWatching(store.getPref('library_path') || 'E:\\Books', runScan)
+    // Also watches every PDF tab folder so new PDFs get swept in the same way.
+    function watchAllFolders() {
+      const folders = [store.getPref('library_path') || 'E:\\Books']
+      for (const tab of store.getPdfTabs()) {
+        if (tab.folder_path) folders.push(tab.folder_path)
+      }
+      startWatching(folders, runScan)
+    }
+    watchAllFolders()
 
     // ── Enrich ─────────────────────────────────────────────────────────────────
 
@@ -515,11 +601,11 @@ function startServer(port = 3001) {
     app.get('/api/preferences', (_, res) => res.json(store.getPrefs()))
 
     app.put('/api/preferences', (req, res) => {
-      const allowed = ['library_path', 'kindle_email', 'kindle_mode', 'theme', 'default_view', 'reading_goal', 'quotes_json_path', 'beta_updates']
+      const allowed = ['library_path', 'kindle_email', 'kindle_mode', 'theme', 'palette', 'default_view', 'reading_goal', 'quotes_json_path', 'beta_updates', 'abs_url', 'abs_token']
       const update  = {}
       for (const k of allowed) { if (k in req.body) update[k] = req.body[k] }
       store.setPrefs(update)
-      if ('library_path' in update) startWatching(update.library_path || 'E:\\Books', runScan)
+      if ('library_path' in update) watchAllFolders()
       res.json(store.getPrefs())
     })
 
@@ -687,7 +773,10 @@ function startServer(port = 3001) {
       try {
         const AdmZip = require('adm-zip')
         const zip = new AdmZip()
-        zip.addLocalFolder(store.dataDir)
+        // search.db and covers/thumbs are derived data (rebuilt from
+        // searchtext/ and covers/ on next start) and far too big for a backup.
+        zip.addLocalFolder(store.dataDir, '', p =>
+          !/search\.db(-wal|-shm)?$/.test(p) && !/covers[\/\\]thumbs[\/\\]/.test(p))
         const stamp = new Date().toISOString().slice(0, 10)
         res.setHeader('Content-Type', 'application/zip')
         res.setHeader('Content-Disposition', `attachment; filename="shelfmind-backup-${stamp}.zip"`)
@@ -717,7 +806,13 @@ function startServer(port = 3001) {
         fs.mkdirSync(tmpDir, { recursive: true })
         zip.extractAllTo(tmpDir, true)
         fs.cpSync(tmpDir, store.dataDir, { recursive: true, force: true })
+        // Backups exclude search.db; drop the now-stale FTS index and rebuild
+        // it from the restored searchtext/ corpus in the background.
+        if (store.searchIndex) {
+          try { store.searchIndex.clearAll() } catch {}
+        }
         res.json({ ok: true })
+        maybeBackfillSearchIndex(store)
       } catch (err) {
         res.status(500).json({ error: err.message })
       } finally {
@@ -877,14 +972,85 @@ function startServer(port = 3001) {
     // series/read-status every time rather than saved filter criteria.
     app.get('/api/continue-series', (_, res) => res.json(store.getContinueSeriesBooks()))
 
+    // ── Audiobookshelf ───────────────────────────────────────────────────────────
+    // Pinned pseudo-shelf fed by the user's external Audiobookshelf server.
+    // Covers are proxied through us because ABS requires the Bearer token,
+    // which the frontend can't attach to a plain <img> request.
+
+    app.get('/api/audiobooks', async (_, res) => {
+      try {
+        res.json(await getAudiobooks(store.getPrefs()))
+      } catch (err) {
+        res.status(500).json({ error: err.message })
+      }
+    })
+
+    app.get('/api/audiobooks/:id', async (req, res) => {
+      try {
+        const book = await getAudiobook(store.getPrefs(), req.params.id)
+        if (!book) return res.status(404).json({ error: 'Not found' })
+        res.json(book)
+      } catch (err) {
+        res.status(500).json({ error: err.message })
+      }
+    })
+
+    app.get('/api/audiobooks/:id/cover', async (req, res) => {
+      try {
+        const cover = await getAbsCover(store.getPrefs(), req.params.id)
+        if (!cover) return res.status(404).json({ error: 'Not found' })
+        res.type(cover.contentType).send(cover.body)
+      } catch (err) {
+        res.status(500).json({ error: err.message })
+      }
+    })
+
+    // Write listening progress (position / finished) back to ABS
+    app.post('/api/audiobooks/:id/progress', async (req, res) => {
+      try {
+        const { currentTime = 0, duration = 0, progress = 0, isFinished } = req.body || {}
+        const ok = await absUpdateProgress(store.getPrefs(), req.params.id, { currentTime, duration, progress, isFinished })
+        res.json({ ok })
+      } catch (err) {
+        res.status(500).json({ error: err.message })
+      }
+    })
+
+    // Listening stats for the Insights page
+    app.get('/api/audiobooks-stats', async (_, res) => {
+      try {
+        res.json(await getListeningStats(store.getPrefs()))
+      } catch (err) {
+        res.status(500).json({ error: err.message })
+      }
+    })
+
+    // Audio marks — local bookmarks for audiobooks, surfaced in the Quotes view
+    app.get('/api/audio-marks', (_, res) => res.json(store.getAudioMarks()))
+
+    app.post('/api/audio-marks', (req, res) => {
+      if (!req.body?.abs_id) return res.status(400).json({ error: 'abs_id required' })
+      res.json(store.createAudioMark(req.body))
+    })
+
+    app.delete('/api/audio-marks/:id', (req, res) => {
+      if (!store.deleteAudioMark(req.params.id)) return res.status(404).json({ error: 'Not found' })
+      res.json({ ok: true })
+    })
+
     // ── PDF Tabs ───────────────────────────────────────────────────────────────
 
     app.get('/api/pdf-tabs', (_, res) => res.json(store.getPdfTabs()))
 
     app.post('/api/pdf-tabs', (req, res) => {
-      const { name } = req.body
+      const { name, folder_path: folderPath } = req.body
       if (!name?.trim()) return res.status(400).json({ error: 'name required' })
-      res.json(store.createPdfTab(name.trim()))
+      if (folderPath && !fs.existsSync(folderPath)) {
+        return res.status(400).json({ error: `Folder not found: ${folderPath}` })
+      }
+      const tab = store.createPdfTab(name.trim(), folderPath || '')
+      watchAllFolders()
+      res.json(tab)
     })
 
     app.get('/api/pdf-tabs/:id', (req, res) => {
@@ -900,6 +1066,7 @@ function startServer(port = 3001) {
       }
       const tab = store.updatePdfTab(req.params.id, req.body)
       if (!tab) return res.status(404).json({ error: 'Not found' })
+      watchAllFolders()
       res.json(tab)
     })
 
@@ -910,26 +1077,14 @@ function startServer(port = 3001) {
       if (!tab.folder_path) return res.status(400).json({ error: 'This tab has no folder set' })
       if (!fs.existsSync(tab.folder_path)) return res.status(400).json({ error: `Folder not found: ${tab.folder_path}` })
 
-      const pdfs = []
-      const walk = (dir, depth) => {
-        if (depth > 6) return
-        let entries
-        try { entries = fs.readdirSync(dir, { withFileTypes: true }) } catch { return }
-        for (const e of entries) {
-          if (e.name.startsWith('.')) continue
-          const full = path.join(dir, e.name)
-          if (e.isDirectory()) walk(full, depth + 1)
-          else if (e.isFile() && e.name.toLowerCase().endsWith('.pdf')) pdfs.push(full)
-        }
-      }
-      walk(tab.folder_path, 0)
-
+      const pdfs = walkPdfFolder(tab.folder_path)
       const added = store.addPdfDocs(req.params.id, pdfs)
       res.json({ ok: true, found: pdfs.length, added: added.length, skipped: pdfs.length - added.length })
     })
 
     app.delete('/api/pdf-tabs/:id', (req, res) => {
       if (!store.deletePdfTab(req.params.id)) return res.status(404).json({ error: 'Not found' })
+      watchAllFolders()
       res.json({ ok: true })
     })
 

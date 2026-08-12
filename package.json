@@ -1,6 +1,6 @@
 {
   "name": "shelfmind",
-  "version": "1.10.1",
+  "version": "1.10.2-beta.5",
   "author": "Shiny Starborne",
   "description": "Your personal ebook library, beautifully organised",
   "main": "electron/main.js",
@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "adm-zip": "^0.5.10",
+    "better-sqlite3": "11.10.0",
     "cors": "^2.8.5",
     "electron-updater": "^6.8.9",
     "express": "^4.18.2",
@@ -22,6 +23,7 @@
     "mammoth": "^1.12.0",
     "pdfjs-dist": "^4.10.38",
     "qrcode": "^1.5.3",
+    "sharp": "0.33.5",
     "word-extractor": "^1.0.4"
   },
   "devDependencies": {

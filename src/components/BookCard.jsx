@@ -1,10 +1,17 @@
 const API_BASE = `http://${window.location.hostname || 'localhost'}:3001`
 
-export function coverSrc(book) {
+// Thumbnail URL for a /covers/{id}.{ext} path — 400px JPEGs generated
+// server-side; the server falls back to the original if no thumb exists yet.
+export function thumbSrc(coverLocalUrl) {
+  return coverLocalUrl?.replace(/^\/covers\/([^/]+)\.\w+$/, '/covers/thumbs/$1.jpg') || null
+}
+
+export function coverSrc(book, { thumb = false } = {}) {
   // 1. Locally saved cover (extracted from epub or downloaded from OL)
   if (book.cover_local) {
+    const url  = thumb ? thumbSrc(book.cover_local) : book.cover_local
     const bust = book.cover_updated_at ? `?t=${book.cover_updated_at}` : ''
-    return `${API_BASE}${book.cover_local}${bust}`
+    return `${API_BASE}${url}${bust}`
   }
   // 2. Remote Open Library URL (fallback, requires internet)
   if (book.cover_url) return book.cover_url
@@ -41,7 +48,7 @@ function MiniStars({ rating }) {
 }
 
 export default function BookCard({ book, selected, onClick, selectable, checked, onCheck }) {
-  const src = coverSrc(book)
+  const src = coverSrc(book, { thumb: true })
   const init = initials(book.title)
   const status = book.read_status || 'unread'
 
@@ -121,7 +128,7 @@ export default function BookCard({ book, selected, onClick, selectable, checked,
 }
 
 export function BookListItem({ book, selected, onClick, selectable, checked, onCheck }) {
-  const src = coverSrc(book)
+  const src = coverSrc(book, { thumb: true })
   const init = initials(book.title)
   const status = book.read_status || 'unread'
 

@@ -4,7 +4,7 @@ import { API, useApp, CONTINUE_SERIES_SHELF_ID } from '../App'
 import BookCard, { BookListItem } from '../components/BookCard'
 import BookDrawer from '../components/BookDrawer'
 import DuplicatesModal from '../components/DuplicatesModal'
-import { coverSrc, initials, displayAuthor } from '../components/BookCard'
+import { coverSrc, thumbSrc, initials, displayAuthor } from '../components/BookCard'
 
 const SORT_OPTIONS = [
   { value: 'title',   label: 'Title A–Z' },
@@ -283,7 +283,7 @@ function ContinueReading({ refreshKey }) {
         <div className="read-next-scroll">
           {all.map(item => {
             const isBook = item.kind === 'book'
-            const src = isBook ? coverSrc(item) : (item.cover ? `${API.replace('/api', '')}${item.cover}` : null)
+            const src = isBook ? coverSrc(item, { thumb: true }) : (item.cover ? `${API.replace('/api', '')}${thumbSrc(item.cover)}` : null)
             const init = initials(item.title)
             const subtitle = isBook ? displayAuthor(item) : (item.tab_name || 'PDF')
             const progress = isBook
@@ -348,7 +348,7 @@ function ReadNextSection({ onBookClick }) {
       {!collapsed && (
         <div className="read-next-scroll">
           {books.map(book => {
-            const src = coverSrc(book)
+            const src = coverSrc(book, { thumb: true })
             const init = initials(book.title)
             return (
               <div key={book.id} className="read-next-card" onClick={() => onBookClick(book.id)}>
@@ -587,11 +587,13 @@ export default function Library() {
   }, [])
 
   // Debounced library-wide full-text search — separate from Fuse's instant
-  // client-side metadata match, since this hits the server's cached text corpus.
+  // client-side metadata match, since this hits the server's text index.
+  // In-flight requests are aborted so stale results can't land out of order.
   useEffect(() => {
     if (search.trim().length < 3) { setFtHits(new Map()); setFtPdfHits([]); return }
+    const ctrl = new AbortController()
     const t = setTimeout(() => {
-      fetch(`${API}/search?q=${encodeURIComponent(search.trim())}`)
+      fetch(`${API}/search?q=${encodeURIComponent(search.trim())}`, { signal: ctrl.signal })
         .then(r => r.json())
         .then(({ results }) => {
           setFtHits(new Map((results || []).filter(r => r.kind === 'book').map(r => [r.id, r])))
@@ -599,7 +601,7 @@ export default function Library() {
         })
         .catch(() => {})
     }, 350)
-    return () => clearTimeout(t)
+    return () => { clearTimeout(t); ctrl.abort() }
   }, [search])
 
   // Keyboard shortcuts
@@ -618,10 +620,12 @@ export default function Library() {
     return () => window.removeEventListener('keydown', handler)
   }, [])
 
-  // Fuse search
+  // Fuse search. threshold 0.2 keeps typo tolerance ("kaladin" → "kalanithi")
+  // without the weak description-noise matches 0.35 let through (a Stephen King
+  // novel showing up for "kaladin" because of vague description similarity).
   const fuse = useMemo(() => new Fuse(books, {
     keys: ['title', 'author', 'author_canonical', 'series_name', 'description', 'subjects', 'tags'],
-    threshold: 0.35,
+    threshold: 0.2,
     ignoreLocation: true,
   }), [books])
 
@@ -744,12 +748,16 @@ export default function Library() {
   }
 
   const deleteActiveShelf = async () => {
-    if (!activeShelfId || activeShelfId === CONTINUE_SERIES_SHELF_ID) return
+    if (!activeShelfId || isPseudoShelf) return
     await fetch(`${API}/smart-shelves/${activeShelfId}`, { method: 'DELETE' })
     setActiveShelfId(null)
     loadShelves()
     toast('Smart shelf deleted', 'success')
   }
+
+  // Pinned pseudo-shelves render a fetched list instead of the filtered library,
+  // so filter/sort/select/view controls don't apply to them.
+  const isPseudoShelf = activeShelfId === CONTINUE_SERIES_SHELF_ID
 
   const activeShelfName = activeShelfId === CONTINUE_SERIES_SHELF_ID
     ? '📖 Continue the Series'
@@ -851,7 +859,7 @@ export default function Library() {
             onChange={e => setSearch(e.target.value)}
           />
         </div>
-        {activeShelfId !== CONTINUE_SERIES_SHELF_ID && (view === 'grid' || view === 'list') && (
+        {!isPseudoShelf && (view === 'grid' || view === 'list') && (
           <select
             className="btn btn-ghost"
             style={{ fontWeight: 400, fontSize: 13 }}
@@ -861,7 +869,7 @@ export default function Library() {
             {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         )}
-        {activeShelfId !== CONTINUE_SERIES_SHELF_ID && (
+        {!isPseudoShelf && (
           <button
             className={`btn ${selectMode ? 'btn-primary' : 'btn-ghost'}`}
             style={{ fontSize: 12, padding: '6px 12px' }}
@@ -877,7 +885,7 @@ export default function Library() {
           onClick={loadBooks}
           title="Reload library"
         >↻</button>
-        {activeShelfId !== CONTINUE_SERIES_SHELF_ID && (
+        {!isPseudoShelf && (
           <div className="view-toggle">
             <button className={view === 'grid'      ? 'active' : ''} onClick={() => saveView('grid')}      title="Grid">▦</button>
             <button className={view === 'list'      ? 'active' : ''} onClick={() => saveView('list')}      title="List">☰</button>
@@ -937,7 +945,7 @@ export default function Library() {
         <div className="filter-bar" style={{ paddingBottom: 8 }}>
           <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--rose-deep)' }}>{activeShelfName}</span>
           <button className="filter-chip" onClick={() => setActiveShelfId(null)}>✕ Exit shelf</button>
-          {activeShelfId !== CONTINUE_SERIES_SHELF_ID && (
+          {!isPseudoShelf && (
             <button className="filter-chip" style={{ color: '#c04040' }} onClick={deleteActiveShelf}>🗑️ Delete shelf</button>
           )}
         </div>
@@ -1041,8 +1049,8 @@ export default function Library() {
         </div>
       )}
 
-      {/* Continue reading */}
-      <ContinueReading refreshKey={continueRefreshKey} />
+      {/* Continue reading — main library page only, not inside shelves */}
+      {!activeShelfId && <ContinueReading refreshKey={continueRefreshKey} />}
 
       {/* Read Next */}
       <ReadNextSection onBookClick={id => setSelectedId(id)} />

@@ -1,11 +1,14 @@
 /**
- * Pure-JS data store. No native modules — works on any Node version.
+ * JSON data store + SQLite FTS5 search index (search.db, via better-sqlite3).
+ * The rest of the store is pure JS; if the native binding fails to load,
+ * search falls back to an in-memory scan and everything else is unaffected.
  *
  * Layout inside dataDir:
  *   books.json    – array of book objects (no cover blobs)
  *   states.json   – { [bookId]: { status, note, updated_at } }
  *   prefs.json    – { key: value }
  *   covers/       – {bookId}.jpg/png (served as static files)
+ *   search.db     – FTS5 full-text search index (rebuilt from searchtext/)
  */
 
 const fs   = require('fs')
@@ -13,6 +16,7 @@ const path = require('path')
 const os   = require('os')
 const crypto = require('crypto')
 const { snippetAround } = require('./textExtract')
+const { makeThumb } = require('./thumbs')
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 // ISO 639-2 (three-letter, common in epub metadata) → ISO 639-1
@@ -108,12 +112,14 @@ class Store {
     this._pdfDocsFile = path.join(dataDir, 'pdfDocs.json')
     this._highlightsFile = path.join(dataDir, 'highlights.json')
     this._smartShelvesFile = path.join(dataDir, 'smartShelves.json')
+    this._audioMarksFile = path.join(dataDir, 'audioMarks.json')
 
     this.books   = readJson(this._booksFile,   [])
     this.states  = readJson(this._statesFile,  {})
     this.prefs   = readJson(this._prefsFile,   {})
     this.lists   = readJson(this._listsFile,   [])
     this.smartShelves = readJson(this._smartShelvesFile, [])
+    this.audioMarks = readJson(this._audioMarksFile, [])
     this.pdfTabs = readJson(this._pdfTabsFile, [])
     this.pdfDocs = readJson(this._pdfDocsFile, [])
     this.highlights = readJson(this._highlightsFile, {})   // bookId → [highlight]
@@ -122,6 +128,7 @@ class Store {
     const defaults = {
       library_path: 'E:\\Books',
       theme:        'light',
+      palette:      'rose',
       default_view: 'grid',
       kindle_email: '',
       kindle_mode:  'web',
@@ -135,7 +142,20 @@ class Store {
     // Index
     this._byId   = new Map(this.books.map(b => [b.id, b]))
     this._byPath = new Map(this.books.map(b => [b.path, b]))
+
+    // SQLite FTS5 search index (search.db in the data dir). Null when the
+    // native binding is unavailable — searchAll then falls back to the legacy
+    // in-memory scan.
+    this._searchIndex = null
+    try {
+      const { SearchIndex, available } = require('./searchIndex')
+      if (available) this._searchIndex = new SearchIndex(dataDir)
+    } catch (err) {
+      console.warn('FTS search index unavailable, falling back to in-memory search:', err.message)
+    }
   }
+
+  get searchIndex() { return this._searchIndex }
 
   // ── Covers ──────────────────────────────────────────────────────────────────
   saveCover(bookId, dataUrl) {
@@ -147,6 +167,9 @@ class Store {
       const buf  = Buffer.from(m[2], 'base64')
       const file = path.join(this.coversDir, `${bookId}.${ext}`)
       fs.writeFileSync(file, buf)
+      // Refresh the grid thumbnail in the background (sharp re-encodes to a
+      // small JPEG; the ?t= cache-bust on the URL makes clients pick it up).
+      makeThumb(this.coversDir, bookId).catch(() => {})
       return `/covers/${bookId}.${ext}`
     } catch { return null }
   }
@@ -317,6 +340,16 @@ class Store {
   saveSearchText(id, data) {
     writeJson(this.searchTextPath(id), data)
     this._searchTextCache.set(id, data)
+    // Keep the FTS index in step — this is the single funnel for extracted
+    // text (indexer job + lazy reader-triggered extraction).
+    if (this._searchIndex) {
+      const isPdf = id.startsWith('pdf-')
+      const items = isPdf ? data.pages : data.chapters
+      if (items) {
+        try { this._searchIndex.indexDocument(isPdf ? 'pdf' : 'book', isPdf ? id.slice(4) : id, items) }
+        catch (err) { console.warn('FTS index update failed for', id, err.message) }
+      }
+    }
   }
 
   getSearchText(id) {
@@ -384,10 +417,31 @@ class Store {
     return count
   }
 
-  // Plain case-insensitive substring scan over the cached text corpus.
-  // Deliberately simple — no inverted index, no new dependency — appropriate
-  // for a personal library once the text is already extracted.
+  // Full-text search. Primary path: SQLite FTS5 index (server/searchIndex.js)
+  // — millisecond queries, no corpus held in RAM. Falls back to the legacy
+  // in-memory scan only when the native binding couldn't load.
   searchAll(query, limit = 50) {
+    if (this._searchIndex) {
+      try {
+        return this._searchIndex.search(query, limit, (kind, id) => {
+          if (kind === 'pdf') {
+            const d = this.pdfDocs.find(d => d.id === id)
+            return d ? { title: d.title, author: '' } : null
+          }
+          const b = this._byId.get(id)
+          return (b && !b.removed) ? { title: b.title, author: b.author_canonical || b.author || '' } : null
+        })
+      } catch (err) {
+        console.warn('FTS search failed, using legacy scan:', err.message)
+      }
+    }
+    return this._searchAllLegacy(query, limit)
+  }
+
+  // Plain case-insensitive substring scan over the cached text corpus.
+  // Fallback for when the FTS index is unavailable; on a large library this
+  // holds the whole corpus in RAM and takes seconds per query.
+  _searchAllLegacy(query, limit = 50) {
     this.ensureSearchCorpusLoaded()
     const q = query.toLowerCase()
     const results = []
@@ -1001,6 +1055,37 @@ class Store {
     return true
   }
 
+  // ── Audio marks (Audiobookshelf bookmarks, shown in the Quotes view) ────────
+
+  getAudioMarks() {
+    return [...this.audioMarks].sort((a, b) => b.created_at - a.created_at)
+  }
+
+  createAudioMark(fields) {
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2)
+    const mark = {
+      id,
+      abs_id:       fields.abs_id,
+      title:        fields.title || '',
+      author:       fields.author || '',
+      cover_url:    fields.cover_url || '',
+      external_url: fields.external_url || '',
+      time:         fields.time || 0,   // book-level seconds
+      created_at:   Math.floor(Date.now() / 1000),
+    }
+    this.audioMarks.push(mark)
+    writeJson(this._audioMarksFile, this.audioMarks)
+    return mark
+  }
+
+  deleteAudioMark(id) {
+    const idx = this.audioMarks.findIndex(m => m.id === id)
+    if (idx === -1) return false
+    this.audioMarks.splice(idx, 1)
+    writeJson(this._audioMarksFile, this.audioMarks)
+    return true
+  }
+
   addBookToList(listId, bookId) {
     const l = this.lists.find(l => l.id === listId)
     if (!l) return false
@@ -1071,10 +1156,10 @@ class Store {
     return { ...t, docs }
   }
 
-  createPdfTab(name) {
+  createPdfTab(name, folderPath = '') {
     const id  = Date.now().toString(36) + Math.random().toString(36).slice(2)
     const now = Math.floor(Date.now() / 1000)
-    const tab = { id, name, folder_path: '', created_at: now, updated_at: now }
+    const tab = { id, name, folder_path: folderPath, created_at: now, updated_at: now }
     this.pdfTabs.push(tab)
     writeJson(this._pdfTabsFile, this.pdfTabs)
     return tab
@@ -1180,6 +1265,9 @@ class Store {
     this.pdfDocs.splice(idx, 1)
     writeJson(this._pdfDocsFile, this.pdfDocs)
     this._removePdfDocsFromLists([id])
+    if (this._searchIndex) {
+      try { this._searchIndex.deleteDocument('pdf', id) } catch {}
+    }
     return true
   }
 

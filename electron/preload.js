@@ -8,7 +8,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   pickFolder: () => ipcRenderer.invoke('pick-folder'),
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   getPlatform: () => ipcRenderer.invoke('get-platform'),
-  setTheme: (theme) => ipcRenderer.invoke('set-theme', theme),
+  setTheme: (theme, colors) => ipcRenderer.invoke('set-theme', theme, colors),
   getServerPort: () => ipcRenderer.invoke('get-server-port'),
   isElectron: true,
 
