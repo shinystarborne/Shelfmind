@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, createContext, useContext } from 'rea
 import Library from './views/Library'
 import Audiobooks from './views/Audiobooks'
 import Insights from './views/Insights'
+import MoodSuggest from './views/MoodSuggest'
 import Preferences from './views/Preferences'
 import ReadingList from './views/ReadingList'
 import PdfTab from './views/PdfTab'
@@ -113,6 +114,7 @@ const NAV = [
   { id: 'audiobooks', icon: '🎧', label: 'Audiobooks' },
   { id: 'quotes',     icon: '❝',  label: 'Quotes' },
   { id: 'insights',   icon: '✨', label: 'Insights' },
+  { id: 'mood',       icon: '🔮', label: 'Mood' },
 ]
 
 export default function App() {
@@ -484,6 +486,7 @@ export default function App() {
           {view === 'audiobooks'  && <Audiobooks />}
           {view === 'quotes'      && <Quotes />}
           {view === 'insights'    && <Insights />}
+          {view === 'mood'        && <MoodSuggest />}
           {view === 'preferences' && <Preferences onSave={refreshPrefs} />}
           {view === 'list' && activeListId && (
             <ReadingList
