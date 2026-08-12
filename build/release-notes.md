@@ -1,3 +1,7 @@
+## Beta 2 — profiling crash fixes
+- Fixed "Maximum call stack size exceeded" failures on books with very large chapters — those books now profile normally.
+- Books whose text can't be extracted (quirky ebook files, scanned PDFs) no longer fail — they're profiled from metadata only, and the log says so.
+
 ## Beta 1 — mood profiling fixes
 - The profiler now actually uses the model you typed — Profile All saves your settings first, and Preferences shows which model a run will use.
 - Live log in Preferences → AI (Mood Suggestions): see each book as it's profiled, with the real error when one fails (bad model id, missing credits, rate limit).
