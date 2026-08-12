@@ -51,8 +51,21 @@ function toFtsQuery(raw) {
     .join(' ')
 }
 
+// The extracted corpus can carry raw HTML entities from book XHTML
+// (htmlToPlainText doesn't decode numeric ones) — decode for display.
+const NAMED_ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' }
+function decodeEntities(s) {
+  return s.replace(/&(#[0-9]+|#x[0-9a-fA-F]+|[a-zA-Z]+);/g, (m, e) => {
+    if (e[0] === '#') {
+      const code = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10)
+      return Number.isFinite(code) ? String.fromCodePoint(code) : m
+    }
+    return NAMED_ENTITIES[e] ?? m
+  })
+}
+
 function parseSnippet(snip) {
-  const text = snip.replaceAll(MARK_OPEN, '').replaceAll(MARK_CLOSE, '')
+  const text = decodeEntities(snip.replaceAll(MARK_OPEN, '').replaceAll(MARK_CLOSE, ''))
   const m = snip.slice(snip.indexOf(MARK_OPEN) + 1)
   const matchText = m.slice(0, m.indexOf(MARK_CLOSE))
   return { text, matchText: matchText || '' }
