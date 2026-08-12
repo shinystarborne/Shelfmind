@@ -235,8 +235,8 @@ export default function Quotes() {
         {groups.map(g => (
           <div key={g.book_id} className="quotes-group">
             <div className="quotes-group-head">
-              {coverSrc(g) ? (
-                <img className="quotes-cover" src={coverSrc(g)} alt="" />
+              {coverSrc(g, { thumb: true }) ? (
+                <img className="quotes-cover" src={coverSrc(g, { thumb: true })} alt="" />
               ) : (
                 <div className="quotes-cover quotes-cover-ph">{initials(g.title)}</div>
               )}
