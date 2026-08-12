@@ -9,12 +9,15 @@ const { startWatching } = require('./watcher')
 const { enrichAll, enrichOne } = require('./enricher')
 const { writeEpubMeta } = require('./epubWriter')
 const { indexAll, extractBookText, extractPdfText } = require('./searchIndexer')
+const { profileAll, profileById } = require('./moodProfiler')
+const { suggest } = require('./moodSuggester')
 const { getAudiobooks, getAudiobook, getCover: getAbsCover, updateProgress: absUpdateProgress, getListeningStats } = require('./abs')
 const { makeThumb, backfillThumbs, thumbPath } = require('./thumbs')
 
 let scanState   = { running: false, current: 0, total: 0, added: 0, done: false, error: null }
 let enrichState = { running: false, current: 0, total: 0, success: 0, done: false }
 let indexState  = { running: false, current: 0, total: 0, success: 0, done: false }
+let moodProfileState = { running: false, current: 0, total: 0, success: 0, failed: 0, done: false, title: '' }
 
 // One-time FTS migration: index any searchtext/*.json not yet in search.db.
 // Reuses indexState so the existing "Building search index…" UI reports it.
@@ -547,6 +550,66 @@ function startServer(port = 3001) {
 
     app.get('/api/search-index/status', (_, res) => res.json(indexState))
 
+    // ── AI mood profiles & suggestions ───────────────────────────────────────
+
+    app.post('/api/mood/profile-all', (req, res) => {
+      if (moodProfileState.running) return res.json({ ok: false, message: 'Already profiling' })
+      if (!store.getPref('openrouter_key')) {
+        return res.status(400).json({ error: 'OpenRouter API key not configured' })
+      }
+      const force = req.body?.force === true
+
+      moodProfileState = { running: true, current: 0, total: 0, success: 0, failed: 0, done: false, title: '' }
+      res.json({ ok: true })
+
+      profileAll(store, store.getPrefs(), p => { Object.assign(moodProfileState, p) }, force)
+        .then(r  => { moodProfileState = { ...moodProfileState, ...r, running: false, done: true, title: '' } })
+        .catch(() => { moodProfileState.running = false; moodProfileState.done = true })
+    })
+
+    app.post('/api/mood/profile/:id', async (req, res) => {
+      if (!store.getPref('openrouter_key')) {
+        return res.status(400).json({ error: 'OpenRouter API key not configured' })
+      }
+      const result = await profileById(store, store.getPrefs(), req.params.id)
+      if (!result) return res.status(404).json({ error: 'Not found' })
+      res.json(result)
+    })
+
+    app.get('/api/mood/status', (_, res) => res.json(moodProfileState))
+
+    // Top 20 mood tags by frequency across all non-failed profiles — drives the
+    // chips UI in the Mood view.
+    app.get('/api/mood/tags', (_, res) => {
+      const counts = {}
+      for (const p of Object.values(store.getAiProfiles())) {
+        if (p.failed || !Array.isArray(p.mood_tags)) continue
+        for (const tag of p.mood_tags) counts[tag] = (counts[tag] || 0) + 1
+      }
+      const tags = Object.entries(counts)
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .slice(0, 20)
+        .map(([tag]) => tag)
+      res.json({ tags })
+    })
+
+    app.post('/api/mood/suggest', async (req, res) => {
+      if (!store.getPref('openrouter_key')) {
+        return res.status(400).json({ error: 'OpenRouter API key not configured' })
+      }
+      const { moodText = '', chips = [], includeRereads = false } = req.body || {}
+      try {
+        const result = await suggest(store, store.getPrefs(), {
+          moodText:       String(moodText || ''),
+          chips:          Array.isArray(chips) ? chips : [],
+          includeRereads: includeRereads === true,
+        })
+        res.json(result)
+      } catch (err) {
+        res.status(502).json({ error: err.message })
+      }
+    })
+
     app.get('/api/books/:id/search-text', async (req, res) => {
       const book = store.getBook(req.params.id)
       if (!book) return res.status(404).json({ error: 'Not found' })
@@ -601,7 +664,7 @@ function startServer(port = 3001) {
     app.get('/api/preferences', (_, res) => res.json(store.getPrefs()))
 
     app.put('/api/preferences', (req, res) => {
-      const allowed = ['library_path', 'kindle_email', 'kindle_mode', 'theme', 'palette', 'default_view', 'reading_goal', 'quotes_json_path', 'beta_updates', 'abs_url', 'abs_token']
+      const allowed = ['library_path', 'kindle_email', 'kindle_mode', 'theme', 'palette', 'default_view', 'reading_goal', 'quotes_json_path', 'beta_updates', 'abs_url', 'abs_token', 'openrouter_key', 'openrouter_model', 'openrouter_web_search']
       const update  = {}
       for (const k of allowed) { if (k in req.body) update[k] = req.body[k] }
       store.setPrefs(update)

@@ -22,6 +22,8 @@ function mapItem(item, absUrl) {
     author:       md.authorName || md.authors?.[0]?.name || '',
     series:       md.seriesName || md.series?.[0]?.name || '',
     series_num:   md.series?.[0]?.sequence ?? null,
+    description: md.description || '',
+    genres:      md.genres || [],
     duration:     item.media?.duration || 0,
     format:       'audiobook',
     cover_url:    `/api/audiobooks/${item.id}/cover`,   // proxied — ABS covers need the Bearer token

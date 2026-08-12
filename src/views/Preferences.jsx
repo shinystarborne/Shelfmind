@@ -585,9 +585,11 @@ export default function Preferences({ onSave }) {
   const [saving, setSaving] = useState(false)
   const [enrichState, setEnrichState] = useState({ running: false, done: false })
   const [indexState, setIndexState]   = useState({ running: false, done: false })
+  const [moodState, setMoodState]     = useState({ running: false, done: false })
   const [showLibImport, setShowLibImport] = useState(false)
   const enrichPollRef = useRef(null)
   const indexPollRef  = useRef(null)
+  const moodPollRef   = useRef(null)
 
   useEffect(() => {
     fetch(`${API}/preferences`).then(r => r.json()).then(setPrefs)
@@ -597,7 +599,8 @@ export default function Preferences({ onSave }) {
   useEffect(() => {
     fetch(`${API}/enrich/status`).then(r => r.json()).then(s => { if (s.running) { setEnrichState(s); startEnrichPoll() } }).catch(() => {})
     fetch(`${API}/search-index/status`).then(r => r.json()).then(s => { if (s.running) { setIndexState(s); startIndexPoll() } }).catch(() => {})
-    return () => { clearInterval(enrichPollRef.current); clearInterval(indexPollRef.current) }
+    fetch(`${API}/mood/status`).then(r => r.json()).then(s => { if (s.running) { setMoodState(s); startMoodPoll() } }).catch(() => {})
+    return () => { clearInterval(enrichPollRef.current); clearInterval(indexPollRef.current); clearInterval(moodPollRef.current) }
   }, [])
 
   const set = (key, val) => setPrefs(p => ({ ...p, [key]: val }))
@@ -658,6 +661,27 @@ export default function Preferences({ onSave }) {
     setIndexState({ running: true, done: false, current: 0, total: 0 })
     await fetch(`${API}/search-index/all`, { method: 'POST' })
     startIndexPoll()
+  }
+
+  const startMoodPoll = () => {
+    if (moodPollRef.current) return
+    moodPollRef.current = setInterval(async () => {
+      const s = await fetch(`${API}/mood/status`).then(r => r.json()).catch(() => null)
+      if (!s) return
+      setMoodState(s)
+      if (s.done || !s.running) { clearInterval(moodPollRef.current); moodPollRef.current = null }
+    }, 1200)
+  }
+
+  const profileAllMoods = async () => {
+    if (moodState.running) return
+    setMoodState({ running: true, done: false, current: 0, total: 0 })
+    await fetch(`${API}/mood/profile-all`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+    startMoodPoll()
   }
 
   return (
@@ -876,6 +900,78 @@ export default function Preferences({ onSave }) {
               placeholder="eyJhbGciOi…"
             />
           </div>
+        </div>
+
+        {/* AI (Mood Suggestions) */}
+        <div className="prefs-section">
+          <h3>🔮 AI (Mood Suggestions)</h3>
+          <p style={{ fontSize: 13, color: 'var(--text-soft)', marginBottom: 16, lineHeight: 1.6 }}>
+            Powers the <strong>Mood</strong> view: an AI model (via{' '}
+            <strong>OpenRouter</strong>, bring your own key) reads each book's metadata
+            plus a short excerpt and writes mood tags + a profile, so it can later
+            suggest what matches your mood. Audiobooks are profiled from metadata only.
+            Runs in the background; only unprofiled books are sent unless you force a re-run.
+          </p>
+          <div className="pref-row">
+            <div className="pref-label">OpenRouter API Key</div>
+            <div className="pref-hint">openrouter.ai → Keys. Stored locally in prefs.json (plaintext, like the ABS token)</div>
+            <input
+              className="pref-input"
+              type="password"
+              value={prefs.openrouter_key || ''}
+              onChange={e => set('openrouter_key', e.target.value)}
+              placeholder="sk-or-…"
+            />
+          </div>
+          <div className="pref-row">
+            <div className="pref-label">Model</div>
+            <div className="pref-hint">Any OpenRouter model id — the default is cheap and good enough for mood profiling</div>
+            <input
+              className="pref-input"
+              value={prefs.openrouter_model || ''}
+              onChange={e => set('openrouter_model', e.target.value)}
+              placeholder="google/gemma-3-27b-it"
+            />
+          </div>
+          <div className="pref-row">
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text)', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={!!prefs.openrouter_web_search}
+                onChange={e => set('openrouter_web_search', e.target.checked)}
+              />
+              Let the AI search the web while profiling
+            </label>
+            <div className="pref-hint">
+              Helps with obscure books the model doesn't know — but adds roughly $4–5 per full library pass. Off by default.
+            </div>
+          </div>
+          {moodState.running && (
+            <div className="enrich-banner" style={{ marginBottom: 12, borderRadius: 8 }}>
+              <span className="spin">↻</span>
+              <span>Profiling… {moodState.current}/{moodState.total}</span>
+              <div className="enrich-bar">
+                <div
+                  className="enrich-bar-fill"
+                  style={{ width: moodState.total > 0 ? `${(moodState.current / moodState.total) * 100}%` : '0%' }}
+                />
+              </div>
+            </div>
+          )}
+          {moodState.done && (
+            <p style={{ fontSize: 12, color: 'var(--sage-dark)', marginBottom: 12 }}>
+              ✓ Done! {moodState.success}/{moodState.total} profiled
+              {moodState.failed > 0 ? ` — ${moodState.failed} failed (retried next run)` : ''}.
+            </p>
+          )}
+          <button
+            className="btn btn-secondary"
+            onClick={profileAllMoods}
+            disabled={moodState.running || !prefs.openrouter_key}
+            title={!prefs.openrouter_key ? 'Add and save your OpenRouter API key first' : ''}
+          >
+            {moodState.running ? <span className="spin">↻</span> : '🔮'} Profile All Books
+          </button>
         </div>
       </>)}
 

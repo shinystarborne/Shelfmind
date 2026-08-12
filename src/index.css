@@ -1455,6 +1455,75 @@ h3 { font-size: 18px; }
 }
 .tag-input:focus { border-color: var(--rose-deep); }
 
+/* ── Mood Suggestions ─────────────────────────────────────────────────────── */
+.mood-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+}
+.mood-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.mood-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.mood-rereads {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--text-soft);
+  cursor: pointer;
+}
+.mood-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+.mood-card {
+  display: flex;
+  flex-direction: column;
+}
+.mood-card-head {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.mood-card-cover {
+  width: 64px;
+  height: 96px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+.mood-card-cover-ph {
+  width: 64px;
+  height: 96px;
+  border-radius: var(--radius-sm);
+  background: var(--cream-dark);
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.mood-card-info { min-width: 0; }
+.mood-reason {
+  font-size: 13px;
+  color: var(--text-soft);
+  line-height: 1.6;
+  flex: 1;
+  margin-bottom: 12px;
+}
+.mood-card-actions {
+  display: flex;
+  gap: 8px;
+}
+
 /* ── Reading Goal Bar ────────────────────────────────────────────────────── */
 .goal-bar-wrap {
   display: flex;

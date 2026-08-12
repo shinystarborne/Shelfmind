@@ -6,6 +6,7 @@
  * Layout inside dataDir:
  *   books.json    – array of book objects (no cover blobs)
  *   states.json   – { [bookId]: { status, note, updated_at } }
+ *   aiProfiles.json – { [bookId|"abs_<id>"]: { mood_tags, mood_text, model, profiled_at, failed } }
  *   prefs.json    – { key: value }
  *   covers/       – {bookId}.jpg/png (served as static files)
  *   search.db     – FTS5 full-text search index (rebuilt from searchtext/)
@@ -113,6 +114,7 @@ class Store {
     this._highlightsFile = path.join(dataDir, 'highlights.json')
     this._smartShelvesFile = path.join(dataDir, 'smartShelves.json')
     this._audioMarksFile = path.join(dataDir, 'audioMarks.json')
+    this._aiProfilesFile = path.join(dataDir, 'aiProfiles.json')
 
     this.books   = readJson(this._booksFile,   [])
     this.states  = readJson(this._statesFile,  {})
@@ -123,6 +125,7 @@ class Store {
     this.pdfTabs = readJson(this._pdfTabsFile, [])
     this.pdfDocs = readJson(this._pdfDocsFile, [])
     this.highlights = readJson(this._highlightsFile, {})   // bookId → [highlight]
+    this.aiProfiles = readJson(this._aiProfilesFile, {})   // bookId | "abs_<id>" → { mood_tags, mood_text, model, profiled_at, failed }
 
     // Seed default prefs
     const defaults = {
@@ -698,6 +701,47 @@ class Store {
       if (next) results.push(this._attachState(next))
     }
     return results
+  }
+
+  // ── AI profiles (mood tags/text per book or ABS audiobook) ───────────────────
+  // One file for ebooks and audiobooks ("abs_<id>" keys). Entries are
+  // extensible — future AI passes (metadata/series checks) add fields here.
+  getAiProfiles()      { return this.aiProfiles }
+  getAiProfile(id)     { return this.aiProfiles[id] || null }
+
+  setAiProfile(id, profile) {
+    // Merge so future fields (meta_check, series_check, …) survive a re-profile
+    this.aiProfiles[id] = { ...(this.aiProfiles[id] || {}), ...profile, failed: false }
+    writeJson(this._aiProfilesFile, this.aiProfiles)
+  }
+
+  markAiProfileFailed(id) {
+    const existing = this.aiProfiles[id] || {}
+    this.aiProfiles[id] = {
+      mood_tags:   [],
+      mood_text:   '',
+      ...existing,
+      failed:      true,
+      profiled_at: Date.now(),
+    }
+    writeJson(this._aiProfilesFile, this.aiProfiles)
+  }
+
+  // Merge tags into one book's states.json tag list, deduplicated
+  // case-insensitively (used by the mood profiler to write its mood_tags).
+  addTags(bookId, tags) {
+    if (!Array.isArray(tags) || !tags.length) return
+    if (!this.states[bookId]) this.states[bookId] = {}
+    const existing = this.states[bookId].tags || []
+    const seen = new Set(existing.map(t => String(t).toLowerCase()))
+    for (const tag of tags) {
+      const t = String(tag).trim()
+      if (!t || seen.has(t.toLowerCase())) continue
+      existing.push(t)
+      seen.add(t.toLowerCase())
+    }
+    this.states[bookId].tags = existing
+    writeJson(this._statesFile, this.states)
   }
 
   // ── Prefs ───────────────────────────────────────────────────────────────────
