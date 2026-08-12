@@ -19,27 +19,35 @@ function buildExcerpt(chapters) {
   const start = chapters.findIndex(c =>
     (c?.text || '').trim().split(/\s+/).filter(Boolean).length > 100)
   if (start === -1) return ''
-  const words = []
+  // concat, not push(...spread) — a single chapter can hold 100k+ words and
+  // spreading that into push() blows the call stack
+  let words = []
   for (let i = start; i < chapters.length && words.length < MAX_WORDS; i++) {
     const text = (chapters[i]?.text || '').trim()
-    if (text) words.push(...text.split(/\s+/))
+    if (text) words = words.concat(text.split(/\s+/))
   }
   return words.slice(0, MAX_WORDS).join(' ')
 }
 
 // Excerpt source: cached search text; extracted on demand (and persisted,
-// which also feeds the FTS index) when missing.
+// which also feeds the FTS index) when missing. Some files defeat the
+// extractors (quirky zips, entity-heavy XML, scanned images) — that's not
+// fatal, profiling falls back to metadata only.
 async function getEbookExcerpt(store, book) {
-  let data = store.getSearchText(book.id)
-  if (!data) {
-    const extracted = await extractBookText(book)
-    if (extracted) {
-      data = { mtime: Date.now(), ...extracted }
-      store.saveSearchText(book.id, data)
-      store.markTextIndexed('book', book.id, true)
+  try {
+    let data = store.getSearchText(book.id)
+    if (!data) {
+      const extracted = await extractBookText(book)
+      if (extracted) {
+        data = { mtime: Date.now(), ...extracted }
+        store.saveSearchText(book.id, data)
+        store.markTextIndexed('book', book.id, true)
+      }
     }
+    return buildExcerpt(data?.chapters)
+  } catch {
+    return ''
   }
-  return buildExcerpt(data?.chapters)
 }
 
 const SYSTEM_PROMPT = `You profile books by mood for a personal library's recommendation feature.
@@ -89,11 +97,12 @@ async function profileOne(store, prefs, item) {
     webSearch: prefs.openrouter_web_search === true,
   })
   const profile = {
-    mood_tags:   normalizeTags(result.mood_tags),
-    mood_text:   String(result.mood_text || '').trim(),
-    model:       prefs.openrouter_model || DEFAULT_MODEL,
-    profiled_at: Date.now(),
-    failed:      false,
+    mood_tags:    normalizeTags(result.mood_tags),
+    mood_text:    String(result.mood_text || '').trim(),
+    model:        prefs.openrouter_model || DEFAULT_MODEL,
+    excerpt_used: !!excerpt,
+    profiled_at:  Date.now(),
+    failed:       false,
   }
   store.setAiProfile(item.id, profile)
   if (item.book && profile.mood_tags.length) store.addTags(item.id, profile.mood_tags)
@@ -154,7 +163,8 @@ async function profileAll(store, prefs, { onProgress, onLog, shouldStop } = {}, 
     try {
       const profile = await profileOne(store, prefs, item)
       success++
-      onLog?.(`✓ ${item.title} — ${profile.mood_tags.join(', ') || 'no tags'}`)
+      const note = item.book && !profile.excerpt_used ? ' (metadata only — no extractable text)' : ''
+      onLog?.(`✓ ${item.title} — ${profile.mood_tags.join(', ') || 'no tags'}${note}`)
     } catch (err) {
       store.markAiProfileFailed(item.id)   // never abort the pass
       failed++
