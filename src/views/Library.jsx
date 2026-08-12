@@ -620,10 +620,12 @@ export default function Library() {
     return () => window.removeEventListener('keydown', handler)
   }, [])
 
-  // Fuse search
+  // Fuse search. threshold 0.2 keeps typo tolerance ("kaladin" → "kalanithi")
+  // without the weak description-noise matches 0.35 let through (a Stephen King
+  // novel showing up for "kaladin" because of vague description similarity).
   const fuse = useMemo(() => new Fuse(books, {
     keys: ['title', 'author', 'author_canonical', 'series_name', 'description', 'subjects', 'tags'],
-    threshold: 0.35,
+    threshold: 0.2,
     ignoreLocation: true,
   }), [books])
 
