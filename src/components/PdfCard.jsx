@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { API } from '../App'
-import { initials } from './BookCard'
+import { initials, thumbSrc } from './BookCard'
 import { renderPdfThumbnail } from '../lib/pdfThumbnail'
 
 // Computed lazily (not at module scope) — `API` is reassigned once Electron
@@ -8,8 +8,9 @@ import { renderPdfThumbnail } from '../lib/pdfThumbnail'
 // circular-import cycle back to App.jsx before its export initializes.
 function apiBase() { return API.replace(/\/api$/, '') }
 
-export function pdfCoverSrc(doc) {
-  return doc.cover ? `${apiBase()}${doc.cover}` : null
+export function pdfCoverSrc(doc, { thumb = false } = {}) {
+  if (!doc.cover) return null
+  return `${apiBase()}${thumb ? thumbSrc(doc.cover) : doc.cover}`
 }
 
 export default function PdfCard({ doc, selected, onClick }) {
@@ -35,7 +36,7 @@ export default function PdfCard({ doc, selected, onClick }) {
       .finally(() => setGenerating(false))
   }, [cover, doc.id, doc.missing])
 
-  const src  = cover ? `${apiBase()}${cover}` : null
+  const src  = cover ? `${apiBase()}${thumbSrc(cover)}` : null
   const init = initials(doc.title) || '📄'
 
   if (doc.missing) {

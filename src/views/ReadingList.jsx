@@ -112,7 +112,7 @@ function PdfPicker({ listDocIds, onAdd, onClose }) {
         />
         <div style={{ padding: '0 16px 16px', overflowY: 'auto', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
           {filtered.map(doc => {
-            const cover = pdfCoverSrc(doc)
+            const cover = pdfCoverSrc(doc, { thumb: true })
             return (
               <button key={doc.id} className="pdf-pick-row" onClick={() => onAdd(doc.id)}>
                 {cover

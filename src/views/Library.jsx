@@ -4,7 +4,7 @@ import { API, useApp, CONTINUE_SERIES_SHELF_ID } from '../App'
 import BookCard, { BookListItem } from '../components/BookCard'
 import BookDrawer from '../components/BookDrawer'
 import DuplicatesModal from '../components/DuplicatesModal'
-import { coverSrc, initials, displayAuthor } from '../components/BookCard'
+import { coverSrc, thumbSrc, initials, displayAuthor } from '../components/BookCard'
 
 const SORT_OPTIONS = [
   { value: 'title',   label: 'Title A–Z' },
@@ -283,7 +283,7 @@ function ContinueReading({ refreshKey }) {
         <div className="read-next-scroll">
           {all.map(item => {
             const isBook = item.kind === 'book'
-            const src = isBook ? coverSrc(item) : (item.cover ? `${API.replace('/api', '')}${item.cover}` : null)
+            const src = isBook ? coverSrc(item, { thumb: true }) : (item.cover ? `${API.replace('/api', '')}${thumbSrc(item.cover)}` : null)
             const init = initials(item.title)
             const subtitle = isBook ? displayAuthor(item) : (item.tab_name || 'PDF')
             const progress = isBook
@@ -348,7 +348,7 @@ function ReadNextSection({ onBookClick }) {
       {!collapsed && (
         <div className="read-next-scroll">
           {books.map(book => {
-            const src = coverSrc(book)
+            const src = coverSrc(book, { thumb: true })
             const init = initials(book.title)
             return (
               <div key={book.id} className="read-next-card" onClick={() => onBookClick(book.id)}>
@@ -587,11 +587,13 @@ export default function Library() {
   }, [])
 
   // Debounced library-wide full-text search — separate from Fuse's instant
-  // client-side metadata match, since this hits the server's cached text corpus.
+  // client-side metadata match, since this hits the server's text index.
+  // In-flight requests are aborted so stale results can't land out of order.
   useEffect(() => {
     if (search.trim().length < 3) { setFtHits(new Map()); setFtPdfHits([]); return }
+    const ctrl = new AbortController()
     const t = setTimeout(() => {
-      fetch(`${API}/search?q=${encodeURIComponent(search.trim())}`)
+      fetch(`${API}/search?q=${encodeURIComponent(search.trim())}`, { signal: ctrl.signal })
         .then(r => r.json())
         .then(({ results }) => {
           setFtHits(new Map((results || []).filter(r => r.kind === 'book').map(r => [r.id, r])))
@@ -599,7 +601,7 @@ export default function Library() {
         })
         .catch(() => {})
     }, 350)
-    return () => clearTimeout(t)
+    return () => { clearTimeout(t); ctrl.abort() }
   }, [search])
 
   // Keyboard shortcuts

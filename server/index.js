@@ -9,10 +9,25 @@ const { startWatching } = require('./watcher')
 const { enrichAll, enrichOne } = require('./enricher')
 const { writeEpubMeta } = require('./epubWriter')
 const { indexAll, extractBookText, extractPdfText } = require('./searchIndexer')
+const { makeThumb, backfillThumbs, thumbPath } = require('./thumbs')
 
 let scanState   = { running: false, current: 0, total: 0, added: 0, done: false, error: null }
 let enrichState = { running: false, current: 0, total: 0, success: 0, done: false }
 let indexState  = { running: false, current: 0, total: 0, success: 0, done: false }
+
+// One-time FTS migration: index any searchtext/*.json not yet in search.db.
+// Reuses indexState so the existing "Building search index…" UI reports it.
+function maybeBackfillSearchIndex(store, onDone) {
+  const idx = store.searchIndex
+  if (!idx || indexState.running) { onDone?.(); return }
+  const pending = idx.pendingBackfill(store.searchTextDir)
+  if (pending.length === 0) { onDone?.(); return }
+  indexState = { running: true, current: 0, total: pending.length, success: 0, done: false }
+  idx.backfill(store.searchTextDir, p => { Object.assign(indexState, p) }, pending)
+    .then(r  => { indexState = { ...r, running: false, done: true } })
+    .catch(() => { indexState.running = false; indexState.done = true })
+    .finally(() => onDone?.())
+}
 
 function getRemovedDir(store) {
   const libraryPath = store.getPref('library_path') || 'E:\\Books'
@@ -41,8 +56,30 @@ function startServer(port = 3001) {
     app.use(cors())
     app.use(express.json({ limit: '25mb' }))
 
+    // Kick off the one-time FTS index migration in the background (no-op once
+    // done), then backfill cover thumbnails — both one-time disk-heavy jobs,
+    // so run them sequentially, not at once.
+    maybeBackfillSearchIndex(store, () => {
+      backfillThumbs(store.coversDir, p => {
+        if (p.current === p.total && p.total > 0) console.log(`Cover thumbnails: ${p.success}/${p.total} generated`)
+      }).catch(() => {})
+    })
+
     // Serve book covers as static files
     app.use('/covers', express.static(path.join(store.coversDir)))
+
+    // Missing thumbnail → generate it on demand from the original cover
+    // (the backfill covers the bulk; this catches stragglers and keeps the
+    // frontend free of file-existence checks). No original → 404.
+    app.get('/covers/thumbs/:file', async (req, res) => {
+      const id = req.params.file.replace(/\.jpg$/i, '')
+      try {
+        if (await makeThumb(store.coversDir, id)) {
+          return res.sendFile(thumbPath(store.coversDir, id))
+        }
+      } catch { /* fall through to 404 */ }
+      res.status(404).end()
+    })
 
     // ── Books ──────────────────────────────────────────────────────────────────
 
@@ -387,8 +424,14 @@ function startServer(port = 3001) {
 
     // ── Scan ───────────────────────────────────────────────────────────────────
 
+    // A scan triggered while one is already running isn't dropped — it sets a
+    // dirty flag and runs again right after, so the watcher can't lose changes
+    // or pile up overlapping scans on a large library (a no-change full scan
+    // takes seconds there).
+    let scanQueued = false
     function runScan() {
-      if (scanState.running) return
+      if (scanState.running) { scanQueued = true; return }
+      scanQueued = false
       const libraryPath = store.getPref('library_path') || 'E:\\Books'
       scanState = { running: true, current: 0, total: 0, added: 0, done: false, error: null }
 
@@ -399,6 +442,7 @@ function startServer(port = 3001) {
       })
         .then(result => { scanState = { ...result, running: false, done: true, error: null } })
         .catch(err  => { scanState = { ...scanState, running: false, done: true, error: err.message } })
+        .finally(() => { if (scanQueued) runScan() })
     }
 
     app.post('/api/scan', async (req, res) => {
@@ -687,7 +731,10 @@ function startServer(port = 3001) {
       try {
         const AdmZip = require('adm-zip')
         const zip = new AdmZip()
-        zip.addLocalFolder(store.dataDir)
+        // search.db and covers/thumbs are derived data (rebuilt from
+        // searchtext/ and covers/ on next start) and far too big for a backup.
+        zip.addLocalFolder(store.dataDir, '', p =>
+          !/search\.db(-wal|-shm)?$/.test(p) && !/covers[\/\\]thumbs[\/\\]/.test(p))
         const stamp = new Date().toISOString().slice(0, 10)
         res.setHeader('Content-Type', 'application/zip')
         res.setHeader('Content-Disposition', `attachment; filename="shelfmind-backup-${stamp}.zip"`)
@@ -717,7 +764,13 @@ function startServer(port = 3001) {
         fs.mkdirSync(tmpDir, { recursive: true })
         zip.extractAllTo(tmpDir, true)
         fs.cpSync(tmpDir, store.dataDir, { recursive: true, force: true })
+        // Backups exclude search.db; drop the now-stale FTS index and rebuild
+        // it from the restored searchtext/ corpus in the background.
+        if (store.searchIndex) {
+          try { store.searchIndex.clearAll() } catch {}
+        }
         res.json({ ok: true })
+        maybeBackfillSearchIndex(store)
       } catch (err) {
         res.status(500).json({ error: err.message })
       } finally {
