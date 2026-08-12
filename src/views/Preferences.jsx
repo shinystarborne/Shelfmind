@@ -675,6 +675,13 @@ export default function Preferences({ onSave }) {
 
   const profileAllMoods = async () => {
     if (moodState.running) return
+    // Save first so the run uses exactly what's typed in the fields above —
+    // otherwise an unsaved model/key edit is silently ignored by the server.
+    await fetch(`${API}/preferences`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(prefs),
+    })
     setMoodState({ running: true, done: false, current: 0, total: 0 })
     await fetch(`${API}/mood/profile-all`, {
       method: 'POST',
@@ -682,6 +689,10 @@ export default function Preferences({ onSave }) {
       body: JSON.stringify({}),
     })
     startMoodPoll()
+  }
+
+  const stopMoodProfiling = async () => {
+    await fetch(`${API}/mood/profile-stop`, { method: 'POST' }).catch(() => {})
   }
 
   return (
@@ -964,14 +975,31 @@ export default function Preferences({ onSave }) {
               {moodState.failed > 0 ? ` — ${moodState.failed} failed (retried next run)` : ''}.
             </p>
           )}
-          <button
-            className="btn btn-secondary"
-            onClick={profileAllMoods}
-            disabled={moodState.running || !prefs.openrouter_key}
-            title={!prefs.openrouter_key ? 'Add and save your OpenRouter API key first' : ''}
-          >
-            {moodState.running ? <span className="spin">↻</span> : '🔮'} Profile All Books
-          </button>
+          <div className="pref-hint" style={{ marginBottom: 8 }}>
+            Runs with model: <strong>{prefs.openrouter_model || 'google/gemma-3-27b-it'}</strong> — fields above are saved automatically when the run starts.
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              className="btn btn-secondary"
+              onClick={profileAllMoods}
+              disabled={moodState.running || !prefs.openrouter_key}
+              title={!prefs.openrouter_key ? 'Add and save your OpenRouter API key first' : ''}
+            >
+              {moodState.running ? <span className="spin">↻</span> : '🔮'} Profile All Books
+            </button>
+            {moodState.running && (
+              <button className="btn btn-secondary" onClick={stopMoodProfiling}>
+                ■ Stop
+              </button>
+            )}
+          </div>
+          {moodState.log?.length > 0 && (
+            <div className="mood-log" ref={el => { if (el) el.scrollTop = el.scrollHeight }}>
+              {moodState.log.map((entry, i) => (
+                <div key={i} className="mood-log-line">{entry.msg}</div>
+              ))}
+            </div>
+          )}
         </div>
       </>)}
 

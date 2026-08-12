@@ -138,25 +138,34 @@ async function collectItems(store, prefs, force) {
   return items
 }
 
-async function profileAll(store, prefs, onProgress, force = false) {
+async function profileAll(store, prefs, { onProgress, onLog, shouldStop } = {}, force = false) {
   const items = await collectItems(store, prefs, force)
   const total = items.length
   let done = 0, success = 0, failed = 0
 
+  onLog?.(`Starting profiling run — ${total} item(s), model: ${prefs.openrouter_model || DEFAULT_MODEL}`)
+
   for (const item of items) {
+    if (shouldStop?.()) {
+      onLog?.(`Stopped by user after ${done}/${total} (${success} ok, ${failed} failed)`)
+      return { total, success, failed, stopped: true }
+    }
     onProgress?.({ current: done, total, success, failed, title: item.title })
     try {
-      await profileOne(store, prefs, item)
+      const profile = await profileOne(store, prefs, item)
       success++
-    } catch {
+      onLog?.(`✓ ${item.title} — ${profile.mood_tags.join(', ') || 'no tags'}`)
+    } catch (err) {
       store.markAiProfileFailed(item.id)   // never abort the pass
       failed++
+      onLog?.(`✗ ${item.title} — ${err.message}`)
     }
     done++
     onProgress?.({ current: done, total, success, failed, title: item.title })
     await sleep(DELAY_MS)
   }
 
+  onLog?.(`Run finished — ${success}/${total} profiled${failed ? `, ${failed} failed (retried next run)` : ''}`)
   return { total, success, failed }
 }
 

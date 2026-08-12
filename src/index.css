@@ -1523,6 +1523,20 @@ h3 { font-size: 18px; }
   display: flex;
   gap: 8px;
 }
+.mood-log {
+  margin-top: 12px;
+  max-height: 180px;
+  overflow-y: auto;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-soft);
+}
+.mood-log-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ── Reading Goal Bar ────────────────────────────────────────────────────── */
 .goal-bar-wrap {

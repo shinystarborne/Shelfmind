@@ -20,25 +20,33 @@ async function chatComplete(prefs, messages, { json = false, webSearch = false }
   if (json)      body.response_format = { type: 'json_object' }
   if (webSearch) body.plugins = [{ id: 'web' }]
 
-  const res = await fetch(API_URL, {
-    method: 'POST',
-    headers: {
-      Authorization:  `Bearer ${key}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(60000),
-  })
-  if (!res.ok) {
-    const text = await res.text().catch(() => '')
-    throw new Error(`OpenRouter ${res.status}: ${text.slice(0, 200)}`)
+  // Some (mostly free) models reject response_format — retry once without it;
+  // parseJsonReply still extracts the JSON from plain text.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: {
+        Authorization:  `Bearer ${key}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(60000),
+    })
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      if (res.status === 400 && body.response_format && attempt === 0) {
+        delete body.response_format
+        continue
+      }
+      throw new Error(`OpenRouter ${res.status}: ${text.slice(0, 200)}`)
+    }
+
+    const data    = await res.json()
+    const content = data?.choices?.[0]?.message?.content
+    if (!content) throw new Error('OpenRouter returned an empty reply')
+
+    return json ? parseJsonReply(content) : content
   }
-
-  const data    = await res.json()
-  const content = data?.choices?.[0]?.message?.content
-  if (!content) throw new Error('OpenRouter returned an empty reply')
-
-  return json ? parseJsonReply(content) : content
 }
 
 // Models wrap JSON in markdown fences or surrounding prose surprisingly often,
