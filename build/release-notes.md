@@ -1,3 +1,7 @@
+## Beta 4 — local LLM connection fixes
+- The Local LLM URL now accepts any common shape — bare host:port, …/v1, or the full …/v1/chat/completions — and errors name the exact URL that failed instead of a cryptic JSON parse error.
+- Profiling aborts early after 5 identical errors in a row (e.g. wrong URL or model name) instead of failing through the whole library; already-completed profiles are kept.
+
 ## Beta 3 — local LLM support
 - Mood AI can now use a local LLM instead of OpenRouter: set the Local LLM URL in Preferences → AI (Mood Suggestions) — LM Studio (http://localhost:1234/v1), Ollama (http://localhost:11434/v1), or any OpenAI-compatible server. No API key needed for local; set the model field to your local model's name.
 
