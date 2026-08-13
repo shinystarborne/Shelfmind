@@ -36,6 +36,12 @@ async function chatComplete(prefs, messages, { json = false, webSearch = false }
 
   const headers = { 'Content-Type': 'application/json' }
   if (key) headers.Authorization = `Bearer ${key}`
+  // Cloudflare Access service-token auth — needed when the LLM server sits
+  // behind Cloudflare Zero Trust (otherwise every request is redirected to
+  // an HTML login page). Create a token under Zero Trust → Access → Service
+  // Auth → Service Tokens.
+  if (prefs?.llm_cf_client_id)     headers['CF-Access-Client-Id']     = prefs.llm_cf_client_id
+  if (prefs?.llm_cf_client_secret) headers['CF-Access-Client-Secret'] = prefs.llm_cf_client_secret
 
   let lastError = null
   for (const url of candidateUrls(baseUrl)) {
