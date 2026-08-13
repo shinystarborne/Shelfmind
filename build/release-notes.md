@@ -1,3 +1,6 @@
+## Beta 5 — Cloudflare Access support for self-hosted LLMs
+- If your LLM server is behind Cloudflare Zero Trust (requests were hitting the Cloudflare login page): create a service token in your Zero Trust dashboard (Access → Service Auth → Service Tokens) and paste the Client-Id + Client-Secret into the new fields in Preferences → AI (Mood Suggestions).
+
 ## Beta 4 — local LLM connection fixes
 - The Local LLM URL now accepts any common shape — bare host:port, …/v1, or the full …/v1/chat/completions — and errors name the exact URL that failed instead of a cryptic JSON parse error.
 - Profiling aborts early after 5 identical errors in a row (e.g. wrong URL or model name) instead of failing through the whole library; already-completed profiles are kept.
