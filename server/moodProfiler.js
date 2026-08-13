@@ -151,6 +151,7 @@ async function profileAll(store, prefs, { onProgress, onLog, shouldStop } = {}, 
   const items = await collectItems(store, prefs, force)
   const total = items.length
   let done = 0, success = 0, failed = 0
+  let lastError = null, sameErrorCount = 0
 
   onLog?.(`Starting profiling run — ${total} item(s), model: ${prefs.openrouter_model || DEFAULT_MODEL}`)
 
@@ -169,6 +170,14 @@ async function profileAll(store, prefs, { onProgress, onLog, shouldStop } = {}, 
       store.markAiProfileFailed(item.id)   // never abort the pass
       failed++
       onLog?.(`✗ ${item.title} — ${err.message}`)
+      // …unless it's a config problem: same error 5× in a row means every
+      // remaining book would fail the same way — stop early instead.
+      sameErrorCount = err.message === lastError ? sameErrorCount + 1 : 1
+      lastError = err.message
+      if (sameErrorCount >= 5) {
+        onLog?.(`Same error 5 times in a row — aborting the run. Fix the AI settings and start again; completed profiles are kept.`)
+        return { total, success, failed, stopped: true }
+      }
     }
     done++
     onProgress?.({ current: done, total, success, failed, title: item.title })
