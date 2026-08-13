@@ -140,7 +140,7 @@ export default function MoodSuggest() {
     }
   }
 
-  const hasKey = !!prefs.openrouter_key
+  const hasKey = !!(prefs.openrouter_key || prefs.llm_base_url)
   const profiling = !!status?.running
   const profiledSoFar = status?.current ?? 0
   const profileTotal  = status?.total ?? 0
@@ -153,10 +153,10 @@ export default function MoodSuggest() {
         </div>
         <div className="empty-state" style={{ flex: 1 }}>
           <div className="empty-icon">🔮</div>
-          <h3>No OpenRouter API key yet</h3>
+          <h3>No AI model configured yet</h3>
           <p>
-            Mood suggestions are powered by an AI model via OpenRouter (bring your own key).
-            Add your key in <strong>Preferences → Library Tools → AI (Mood Suggestions)</strong>,
+            Mood suggestions are powered by an AI model — OpenRouter (bring your own key)
+            or a local LLM server. Set one up in <strong>Preferences → Library Tools → AI (Mood Suggestions)</strong>,
             then run "Profile All Books" once.
           </p>
         </div>

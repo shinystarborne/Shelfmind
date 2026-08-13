@@ -925,13 +925,26 @@ export default function Preferences({ onSave }) {
           </p>
           <div className="pref-row">
             <div className="pref-label">OpenRouter API Key</div>
-            <div className="pref-hint">openrouter.ai → Keys. Stored locally in prefs.json (plaintext, like the ABS token)</div>
+            <div className="pref-hint">openrouter.ai → Keys. Stored locally in prefs.json (plaintext, like the ABS token). Not needed if you use a local LLM below.</div>
             <input
               className="pref-input"
               type="password"
               value={prefs.openrouter_key || ''}
               onChange={e => set('openrouter_key', e.target.value)}
               placeholder="sk-or-…"
+            />
+          </div>
+          <div className="pref-row">
+            <div className="pref-label">Local LLM URL (optional)</div>
+            <div className="pref-hint">
+              Any OpenAI-compatible server — LM Studio: http://localhost:1234/v1 · Ollama: http://localhost:11434/v1.
+              When set, requests go here instead of OpenRouter and no API key is needed.
+            </div>
+            <input
+              className="pref-input"
+              value={prefs.llm_base_url || ''}
+              onChange={e => set('llm_base_url', e.target.value)}
+              placeholder="http://localhost:1234/v1"
             />
           </div>
           <div className="pref-row">
@@ -976,14 +989,15 @@ export default function Preferences({ onSave }) {
             </p>
           )}
           <div className="pref-hint" style={{ marginBottom: 8 }}>
-            Runs with model: <strong>{prefs.openrouter_model || 'google/gemma-3-27b-it'}</strong> — fields above are saved automatically when the run starts.
+            Runs with model: <strong>{prefs.openrouter_model || 'google/gemma-3-27b-it'}</strong>
+            {prefs.llm_base_url ? ` via ${prefs.llm_base_url}` : ' via OpenRouter'} — fields above are saved automatically when the run starts.
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button
               className="btn btn-secondary"
               onClick={profileAllMoods}
-              disabled={moodState.running || !prefs.openrouter_key}
-              title={!prefs.openrouter_key ? 'Add and save your OpenRouter API key first' : ''}
+              disabled={moodState.running || !(prefs.openrouter_key || prefs.llm_base_url)}
+              title={!(prefs.openrouter_key || prefs.llm_base_url) ? 'Add an OpenRouter API key or a local LLM URL first' : ''}
             >
               {moodState.running ? <span className="spin">↻</span> : '🔮'} Profile All Books
             </button>

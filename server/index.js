@@ -562,8 +562,8 @@ function startServer(port = 3001) {
 
     app.post('/api/mood/profile-all', (req, res) => {
       if (moodProfileState.running) return res.json({ ok: false, message: 'Already profiling' })
-      if (!store.getPref('openrouter_key')) {
-        return res.status(400).json({ error: 'OpenRouter API key not configured' })
+      if (!store.getPref('openrouter_key') && !store.getPref('llm_base_url')) {
+        return res.status(400).json({ error: 'No LLM configured — set an OpenRouter key or a local LLM URL in Preferences' })
       }
       const force = req.body?.force === true
 
@@ -588,8 +588,8 @@ function startServer(port = 3001) {
     })
 
     app.post('/api/mood/profile/:id', async (req, res) => {
-      if (!store.getPref('openrouter_key')) {
-        return res.status(400).json({ error: 'OpenRouter API key not configured' })
+      if (!store.getPref('openrouter_key') && !store.getPref('llm_base_url')) {
+        return res.status(400).json({ error: 'No LLM configured — set an OpenRouter key or a local LLM URL in Preferences' })
       }
       const result = await profileById(store, store.getPrefs(), req.params.id)
       if (!result) return res.status(404).json({ error: 'Not found' })
@@ -614,8 +614,8 @@ function startServer(port = 3001) {
     })
 
     app.post('/api/mood/suggest', async (req, res) => {
-      if (!store.getPref('openrouter_key')) {
-        return res.status(400).json({ error: 'OpenRouter API key not configured' })
+      if (!store.getPref('openrouter_key') && !store.getPref('llm_base_url')) {
+        return res.status(400).json({ error: 'No LLM configured — set an OpenRouter key or a local LLM URL in Preferences' })
       }
       const { moodText = '', chips = [], includeRereads = false } = req.body || {}
       try {
@@ -684,7 +684,7 @@ function startServer(port = 3001) {
     app.get('/api/preferences', (_, res) => res.json(store.getPrefs()))
 
     app.put('/api/preferences', (req, res) => {
-      const allowed = ['library_path', 'kindle_email', 'kindle_mode', 'theme', 'palette', 'default_view', 'reading_goal', 'quotes_json_path', 'beta_updates', 'abs_url', 'abs_token', 'openrouter_key', 'openrouter_model', 'openrouter_web_search']
+      const allowed = ['library_path', 'kindle_email', 'kindle_mode', 'theme', 'palette', 'default_view', 'reading_goal', 'quotes_json_path', 'beta_updates', 'abs_url', 'abs_token', 'openrouter_key', 'openrouter_model', 'openrouter_web_search', 'llm_base_url']
       const update  = {}
       for (const k of allowed) { if (k in req.body) update[k] = req.body[k] }
       store.setPrefs(update)

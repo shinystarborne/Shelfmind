@@ -1,34 +1,42 @@
-// Generic OpenRouter chat client — shared by all AI features (mood profiling,
-// mood suggestions, and future metadata/series checks). Bare fetch, no deps.
-// Config lives in prefs: openrouter_key (required), openrouter_model (optional),
-// openrouter_web_search (optional toggle, real per-request cost).
+// Generic OpenAI-compatible chat client — shared by all AI features (mood
+// profiling, mood suggestions, and future metadata/series checks). Bare fetch,
+// no deps. Defaults to OpenRouter; set prefs.llm_base_url to point at a local
+// server instead (LM Studio http://localhost:1234/v1, Ollama
+// http://localhost:11434/v1, …) — the API key is optional in that case.
+// Config: openrouter_key, openrouter_model, openrouter_web_search (OpenRouter
+// only), llm_base_url.
 
-const API_URL       = 'https://openrouter.ai/api/v1/chat/completions'
-const DEFAULT_MODEL = 'google/gemma-3-27b-it'
+const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
+const DEFAULT_MODEL  = 'google/gemma-3-27b-it'
 
 // messages: [{ role: 'system'|'user', content: '…' }]
 // opts.json      — request a JSON object reply and parse it robustly
-// opts.webSearch — enable OpenRouter's web plugin (billed per lookup)
+// opts.webSearch — enable OpenRouter's web plugin (billed per lookup; ignored
+//                  for custom base URLs, which have no such plugin)
 async function chatComplete(prefs, messages, { json = false, webSearch = false } = {}) {
-  const key = prefs?.openrouter_key
-  if (!key) throw new Error('OpenRouter API key not configured')
+  const key     = prefs?.openrouter_key
+  const baseUrl = (prefs?.llm_base_url || '').trim().replace(/\/+$/, '')
+  const url     = !baseUrl ? OPENROUTER_URL
+    : baseUrl.endsWith('/chat/completions') ? baseUrl
+    : `${baseUrl}/chat/completions`
+  if (!key && !baseUrl) throw new Error('No LLM configured — set an OpenRouter key or a local LLM URL in Preferences')
 
   const body = {
     model: prefs.openrouter_model || DEFAULT_MODEL,
     messages,
   }
-  if (json)      body.response_format = { type: 'json_object' }
-  if (webSearch) body.plugins = [{ id: 'web' }]
+  if (json)                     body.response_format = { type: 'json_object' }
+  if (webSearch && !baseUrl)    body.plugins = [{ id: 'web' }]
 
-  // Some (mostly free) models reject response_format — retry once without it;
-  // parseJsonReply still extracts the JSON from plain text.
+  const headers = { 'Content-Type': 'application/json' }
+  if (key) headers.Authorization = `Bearer ${key}`
+
+  // Some (mostly free/local) models reject response_format — retry once without
+  // it; parseJsonReply still extracts the JSON from plain text.
   for (let attempt = 0; attempt < 2; attempt++) {
-    const res = await fetch(API_URL, {
+    const res = await fetch(url, {
       method: 'POST',
-      headers: {
-        Authorization:  `Bearer ${key}`,
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(60000),
     })
@@ -38,12 +46,12 @@ async function chatComplete(prefs, messages, { json = false, webSearch = false }
         delete body.response_format
         continue
       }
-      throw new Error(`OpenRouter ${res.status}: ${text.slice(0, 200)}`)
+      throw new Error(`LLM ${res.status}: ${text.slice(0, 200)}`)
     }
 
     const data    = await res.json()
     const content = data?.choices?.[0]?.message?.content
-    if (!content) throw new Error('OpenRouter returned an empty reply')
+    if (!content) throw new Error('LLM returned an empty reply')
 
     return json ? parseJsonReply(content) : content
   }
