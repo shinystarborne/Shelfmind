@@ -948,6 +948,29 @@ export default function Preferences({ onSave }) {
             />
           </div>
           <div className="pref-row">
+            <div className="pref-label">Cloudflare Access service token (optional)</div>
+            <div className="pref-hint">
+              Only if your LLM server is behind Cloudflare Zero Trust: Zero Trust dashboard → Access → Service Auth → Service Tokens.
+              Without these, requests hit the Cloudflare login page instead of your server.
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                className="pref-input"
+                type="password"
+                value={prefs.llm_cf_client_id || ''}
+                onChange={e => set('llm_cf_client_id', e.target.value)}
+                placeholder="CF-Access-Client-Id"
+              />
+              <input
+                className="pref-input"
+                type="password"
+                value={prefs.llm_cf_client_secret || ''}
+                onChange={e => set('llm_cf_client_secret', e.target.value)}
+                placeholder="CF-Access-Client-Secret"
+              />
+            </div>
+          </div>
+          <div className="pref-row">
             <div className="pref-label">Model</div>
             <div className="pref-hint">Any OpenRouter model id — the default is cheap and good enough for mood profiling</div>
             <input
