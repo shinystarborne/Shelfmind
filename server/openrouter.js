@@ -23,7 +23,8 @@ function candidateUrls(baseUrl) {
 // opts.webSearch — enable OpenRouter's web plugin (billed per lookup; ignored
 //                  for custom base URLs, which have no such plugin)
 // opts.timeoutMs — default 60s; suggestion calls on local models need longer
-async function chatComplete(prefs, messages, { json = false, webSearch = false, timeoutMs = 60000 } = {}) {
+// opts.temperature — override the model default (roasts want a hot one)
+async function chatComplete(prefs, messages, { json = false, webSearch = false, timeoutMs = 60000, temperature } = {}) {
   const key     = prefs?.openrouter_key
   const baseUrl = (prefs?.llm_base_url || '').trim().replace(/\/+$/, '')
   if (!key && !baseUrl) throw new Error('No LLM configured — set an OpenRouter key or a local LLM URL in Preferences')
@@ -34,6 +35,7 @@ async function chatComplete(prefs, messages, { json = false, webSearch = false, 
   }
   if (json)                  body.response_format = { type: 'json_object' }
   if (webSearch && !baseUrl) body.plugins = [{ id: 'web' }]
+  if (temperature != null)   body.temperature = temperature
 
   const headers = { 'Content-Type': 'application/json' }
   if (key) headers.Authorization = `Bearer ${key}`
