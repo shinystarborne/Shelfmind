@@ -22,7 +22,8 @@ function candidateUrls(baseUrl) {
 // opts.json      — request a JSON object reply and parse it robustly
 // opts.webSearch — enable OpenRouter's web plugin (billed per lookup; ignored
 //                  for custom base URLs, which have no such plugin)
-async function chatComplete(prefs, messages, { json = false, webSearch = false } = {}) {
+// opts.timeoutMs — default 60s; suggestion calls on local models need longer
+async function chatComplete(prefs, messages, { json = false, webSearch = false, timeoutMs = 60000 } = {}) {
   const key     = prefs?.openrouter_key
   const baseUrl = (prefs?.llm_base_url || '').trim().replace(/\/+$/, '')
   if (!key && !baseUrl) throw new Error('No LLM configured — set an OpenRouter key or a local LLM URL in Preferences')
@@ -52,7 +53,7 @@ async function chatComplete(prefs, messages, { json = false, webSearch = false }
         method: 'POST',
         headers,
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(60000),
+        signal: AbortSignal.timeout(timeoutMs),
       })
       const text = await res.text().catch(() => '')
 

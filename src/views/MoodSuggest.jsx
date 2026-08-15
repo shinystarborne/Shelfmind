@@ -130,11 +130,16 @@ export default function MoodSuggest() {
         body: JSON.stringify({ moodText, chips, includeRereads }),
       })
       if (r.status === 400) { setNeedsKey(true); setSuggestions(null); return }
-      if (!r.ok) throw new Error()
+      if (!r.ok) {
+        const d = await r.json().catch(() => null)
+        throw new Error(d?.error || `Server error ${r.status}`)
+      }
       const d = await r.json()
       setSuggestions(d.suggestions || [])
-    } catch {
-      toast('Could not get suggestions — is the server running?')
+    } catch (err) {
+      toast(err.message === 'Failed to fetch'
+        ? 'Could not get suggestions — is the server running?'
+        : `Suggestion failed: ${err.message}`)
     } finally {
       setLoading(false)
     }
@@ -204,6 +209,11 @@ export default function MoodSuggest() {
             >
               {loading ? <span className="spin">↻</span> : '🔮'} Suggest
             </button>
+            {loading && (
+              <span style={{ fontSize: 12, color: 'var(--text-soft)', alignSelf: 'center' }}>
+                thinking… a local model can take a minute or two
+              </span>
+            )}
           </div>
 
           <label className="mood-rereads">
