@@ -42,17 +42,45 @@ function StatCard({ value, label, sub, accent }) {
 }
 
 export default function Insights() {
-  const { prefs } = useApp()
+  const { prefs, toast } = useApp()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [abs, setAbs] = useState(null)   // Audiobookshelf listening stats
+  const [roasts, setRoasts] = useState([])
+  const [roastLoading, setRoastLoading] = useState(false)
 
   useEffect(() => {
     fetch(`${API}/insights`)
       .then(r => r.json())
       .then(d => { setData(d); setLoading(false) })
       .catch(() => setLoading(false))
+    fetch(`${API}/roasts`)
+      .then(r => r.json())
+      .then(d => setRoasts(Array.isArray(d) ? d : []))
+      .catch(() => {})
   }, [])
+
+  const generateRoast = async () => {
+    if (roastLoading) return
+    setRoastLoading(true)
+    try {
+      const r = await fetch(`${API}/roast`, { method: 'POST' })
+      const d = await r.json().catch(() => null)
+      if (!r.ok) throw new Error(d?.error || `Server error ${r.status}`)
+      setRoasts(rs => [d, ...rs])
+    } catch (err) {
+      toast(err.message === 'Failed to fetch'
+        ? 'Could not get a roast — is the server running?'
+        : `Roast failed: ${err.message}`)
+    } finally {
+      setRoastLoading(false)
+    }
+  }
+
+  const removeRoast = (id) => {
+    setRoasts(rs => rs.filter(r => r.id !== id))
+    fetch(`${API}/roasts/${id}`, { method: 'DELETE' }).catch(() => {})
+  }
 
   useEffect(() => {
     if (!prefs.abs_url) return
@@ -355,6 +383,43 @@ export default function Insights() {
             </div>
           </>
         )}
+
+        {/* AI roast — sarcastic library critique, saved history */}
+        <div className="chart-card" style={{ marginTop: 20 }}>
+          <h3>🔥 Roast My Library</h3>
+          <p style={{ fontSize: 13, color: 'var(--text-soft)', marginTop: 0 }}>
+            The AI reads your stats and delivers a sarcastic but affectionate critique of your reading habits.
+            Roasts are saved here; delete them whenever.
+          </p>
+          <button
+            className="btn btn-secondary"
+            onClick={generateRoast}
+            disabled={roastLoading || !(prefs.openrouter_key || prefs.llm_base_url)}
+            title={!(prefs.openrouter_key || prefs.llm_base_url) ? 'Set up an AI model in Preferences → Library Tools first' : ''}
+          >
+            {roastLoading ? <span className="spin">↻</span> : '🔥'} Roast me
+          </button>
+          {roastLoading && (
+            <span style={{ fontSize: 12, color: 'var(--text-soft)', marginLeft: 8 }}>
+              judging your taste… a local model can take a minute or two
+            </span>
+          )}
+          {roasts.length > 0 && (
+            <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {roasts.map(r => (
+                <div key={r.id} style={{ border: '1px solid var(--border-soft)', borderRadius: 8, padding: '10px 12px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{new Date(r.created_at).toLocaleString()}</span>
+                    <button className="btn btn-secondary" style={{ padding: '2px 8px', fontSize: 11 }} onClick={() => removeRoast(r.id)}>
+                      Delete
+                    </button>
+                  </div>
+                  <p style={{ whiteSpace: 'pre-line', lineHeight: 1.7, color: 'var(--text)', margin: 0, fontSize: 13 }}>{r.text}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

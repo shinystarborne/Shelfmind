@@ -619,10 +619,18 @@ function startServer(port = 3001) {
         return res.status(400).json({ error: 'No LLM configured — set an OpenRouter key or a local LLM URL in Preferences' })
       }
       try {
-        res.json({ roast: await roast(store, store.getPrefs()) })
+        const text = await roast(store, store.getPrefs())
+        res.json(store.addRoast(text))   // { id, text, created_at } — roasts are saved
       } catch (err) {
         res.status(502).json({ error: err.message })
       }
+    })
+
+    app.get('/api/roasts', (_, res) => res.json(store.getRoasts()))
+
+    app.delete('/api/roasts/:id', (req, res) => {
+      store.deleteRoast(req.params.id)
+      res.json({ ok: true })
     })
 
     app.post('/api/mood/suggest', async (req, res) => {

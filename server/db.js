@@ -114,6 +114,7 @@ class Store {
     this._highlightsFile = path.join(dataDir, 'highlights.json')
     this._smartShelvesFile = path.join(dataDir, 'smartShelves.json')
     this._audioMarksFile = path.join(dataDir, 'audioMarks.json')
+    this._roastsFile  = path.join(dataDir, 'roasts.json')
     this._aiProfilesFile = path.join(dataDir, 'aiProfiles.json')
 
     this.books   = readJson(this._booksFile,   [])
@@ -122,6 +123,7 @@ class Store {
     this.lists   = readJson(this._listsFile,   [])
     this.smartShelves = readJson(this._smartShelvesFile, [])
     this.audioMarks = readJson(this._audioMarksFile, [])
+    this.roasts  = readJson(this._roastsFile,  [])
     this.pdfTabs = readJson(this._pdfTabsFile, [])
     this.pdfDocs = readJson(this._pdfDocsFile, [])
     this.highlights = readJson(this._highlightsFile, {})   // bookId → [highlight]
@@ -725,6 +727,21 @@ class Store {
       profiled_at: Date.now(),
     }
     writeJson(this._aiProfilesFile, this.aiProfiles)
+  }
+
+  // ── Roasts (saved AI library critiques) ─────────────────────────────────────
+  getRoasts() { return this.roasts }
+
+  addRoast(text) {
+    const entry = { id: crypto.randomUUID(), text, created_at: Date.now() }
+    this.roasts.unshift(entry)   // newest first
+    writeJson(this._roastsFile, this.roasts)
+    return entry
+  }
+
+  deleteRoast(id) {
+    this.roasts = this.roasts.filter(r => r.id !== id)
+    writeJson(this._roastsFile, this.roasts)
   }
 
   // Merge tags into one book's states.json tag list, deduplicated
