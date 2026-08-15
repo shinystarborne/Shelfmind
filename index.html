@@ -4,6 +4,17 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ShelfMind</title>
+    <script>
+      // Apply the cached theme/palette before first paint — the authoritative
+      // values live server-side, but waiting for that fetch flashes the light
+      // theme on every launch. App.jsx keeps this cache in sync.
+      try {
+        var t = localStorage.getItem('sm_theme')
+        if (t) document.documentElement.setAttribute('data-theme', t)
+        var p = localStorage.getItem('sm_palette')
+        if (p && p !== 'rose') document.documentElement.setAttribute('data-palette', p)
+      } catch (e) { /* private mode etc. — fall back to default light */ }
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600&family=Lato:wght@300;400;700&display=swap" rel="stylesheet" />
