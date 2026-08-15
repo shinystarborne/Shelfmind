@@ -1,8 +1,20 @@
 const { app, BrowserWindow, shell, ipcMain, nativeTheme, dialog } = require('electron')
 const path = require('path')
+const fs   = require('fs')
 
 const isDev = process.env.NODE_ENV === 'development'
 const PORT  = 3001
+
+// Last-used window chrome colors, cached so a dark theme doesn't flash light
+// window buttons/background on startup (the renderer only syncs colors after
+// its preferences fetch lands).
+function windowThemeFile() { return path.join(app.getPath('userData'), 'windowTheme.json') }
+function loadWindowTheme() {
+  try { return JSON.parse(fs.readFileSync(windowThemeFile(), 'utf8')) } catch { return null }
+}
+function saveWindowTheme(t) {
+  try { fs.writeFileSync(windowThemeFile(), JSON.stringify(t)) } catch {}
+}
 
 let mainWindow
 let serverPort = PORT
@@ -103,6 +115,8 @@ async function createWindow() {
   const actualPort = await startServer(PORT)
   serverPort = actualPort
 
+  const wt = loadWindowTheme()
+
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -113,11 +127,11 @@ async function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
     },
-    backgroundColor: '#fdf6f0',
+    backgroundColor: wt?.color || '#fdf6f0',
     titleBarStyle: 'hidden',
     titleBarOverlay: {
-      color: '#fdf6f0',
-      symbolColor: '#6b4c3b',
+      color: wt?.color || '#fdf6f0',
+      symbolColor: wt?.symbolColor || '#6b4c3b',
       height: 36,
     },
     show: false,
@@ -226,9 +240,10 @@ ipcMain.handle('set-theme', (_, theme, colors) => {
   const fallback = theme === 'dark'
     ? { color: '#1c1410', symbolColor: '#e8c4a8' }
     : { color: '#fdf6f0', symbolColor: '#6b4c3b' }
-  mainWindow.setTitleBarOverlay({
+  const applied = {
     color:       colors?.color       || fallback.color,
     symbolColor: colors?.symbolColor || fallback.symbolColor,
-    height: 36,
-  })
+  }
+  mainWindow.setTitleBarOverlay({ ...applied, height: 36 })
+  saveWindowTheme(applied)   // next launch opens with these colors directly
 })
