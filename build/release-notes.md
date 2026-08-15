@@ -1,3 +1,6 @@
+## Beta 7 — startup theme flash fix
+- The app no longer opens light for a second before switching to your dark theme — the saved theme/palette are now applied before the first paint.
+
 ## Beta 6 — suggestion call fixes
 - Suggestions no longer fail with a timeout on local models — the AI gets up to 5 minutes to answer (it sends ~30 candidate profiles in one prompt; local models need a while), and the view says so while you wait.
 - If a suggestion still fails, the error message now says what actually happened instead of "is the server running?".
