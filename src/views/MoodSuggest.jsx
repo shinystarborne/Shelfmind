@@ -80,6 +80,8 @@ export default function MoodSuggest() {
   const [books, setBooks]             = useState({})     // id → book
   const [audio, setAudio]             = useState({})     // abs_id → item
   const [drawerBookId, setDrawerBookId] = useState(null)
+  const [roast, setRoast]               = useState(null)
+  const [roastLoading, setRoastLoading] = useState(false)
 
   useEffect(() => {
     fetch(`${API}/mood/tags`).then(r => r.json()).then(d => setTags(d.tags || [])).catch(() => {})
@@ -142,6 +144,23 @@ export default function MoodSuggest() {
         : `Suggestion failed: ${err.message}`)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const getRoast = async () => {
+    if (roastLoading) return
+    setRoastLoading(true)
+    try {
+      const r = await fetch(`${API}/roast`, { method: 'POST' })
+      const d = await r.json().catch(() => null)
+      if (!r.ok) throw new Error(d?.error || `Server error ${r.status}`)
+      setRoast(d.roast || '')
+    } catch (err) {
+      toast(err.message === 'Failed to fetch'
+        ? 'Could not get a roast — is the server running?'
+        : `Roast failed: ${err.message}`)
+    } finally {
+      setRoastLoading(false)
     }
   }
 
@@ -225,6 +244,17 @@ export default function MoodSuggest() {
             Include books I've already read
           </label>
 
+          <div style={{ marginTop: 12, borderTop: '1px solid var(--border-soft)', paddingTop: 12 }}>
+            <button className="btn btn-secondary" onClick={getRoast} disabled={roastLoading}>
+              {roastLoading ? <span className="spin">↻</span> : '🔥'} Roast my library
+            </button>
+            {roastLoading && (
+              <span style={{ fontSize: 12, color: 'var(--text-soft)', marginLeft: 8 }}>
+                judging your taste… a local model can take a minute or two
+              </span>
+            )}
+          </div>
+
           {profiling && (
             <div className="enrich-banner" style={{ marginTop: 12, borderRadius: 8 }}>
               <span className="spin">↻</span>
@@ -268,6 +298,13 @@ export default function MoodSuggest() {
               </div>
             </>
           )
+        )}
+
+        {roast && (
+          <div className="chart-card" style={{ marginTop: 20 }}>
+            <h3>🔥 The Roast</h3>
+            <p style={{ whiteSpace: 'pre-line', lineHeight: 1.7, color: 'var(--text)', margin: 0 }}>{roast}</p>
+          </div>
         )}
       </div>
 

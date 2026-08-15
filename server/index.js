@@ -11,6 +11,7 @@ const { writeEpubMeta } = require('./epubWriter')
 const { indexAll, extractBookText, extractPdfText } = require('./searchIndexer')
 const { profileAll, profileById } = require('./moodProfiler')
 const { suggest } = require('./moodSuggester')
+const { roast } = require('./roast')
 const { getAudiobooks, getAudiobook, getCover: getAbsCover, updateProgress: absUpdateProgress, getListeningStats } = require('./abs')
 const { makeThumb, backfillThumbs, thumbPath } = require('./thumbs')
 
@@ -611,6 +612,17 @@ function startServer(port = 3001) {
         .slice(0, 20)
         .map(([tag]) => tag)
       res.json({ tags })
+    })
+
+    app.post('/api/roast', async (req, res) => {
+      if (!store.getPref('openrouter_key') && !store.getPref('llm_base_url')) {
+        return res.status(400).json({ error: 'No LLM configured — set an OpenRouter key or a local LLM URL in Preferences' })
+      }
+      try {
+        res.json({ roast: await roast(store, store.getPrefs()) })
+      } catch (err) {
+        res.status(502).json({ error: err.message })
+      }
     })
 
     app.post('/api/mood/suggest', async (req, res) => {
