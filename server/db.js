@@ -569,8 +569,10 @@ class Store {
     for (const b of this.books) {
       if (b.removed) continue
       const st = this.states[b.id] || {}
-      if (st.status === 'reading' || st.reading_position) {
-        books.push({ ...this._attachState(b), _resumedAt: st.reading_position?.updated_at || 0 })
+      // Only books the user explicitly marked as "reading" — merely opening a
+      // book saves a reading_position, and that alone shouldn't land it here.
+      if (st.status === 'reading') {
+        books.push({ ...this._attachState(b), _resumedAt: st.reading_position?.updated_at || st.updated_at || 0 })
       }
     }
     books.sort((a, b) => b._resumedAt - a._resumedAt)
