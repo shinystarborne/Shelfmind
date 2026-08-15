@@ -1,3 +1,6 @@
+## Beta 8 — titlebar flash fix
+- The window buttons (minimize/maximize/close) and window background no longer flash light on startup — the app now opens with your theme's colors from the very first frame.
+
 ## Beta 7 — startup theme flash fix
 - The app no longer opens light for a second before switching to your dark theme — the saved theme/palette are now applied before the first paint.
 
