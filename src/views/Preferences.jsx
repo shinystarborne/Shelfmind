@@ -610,6 +610,7 @@ export default function Preferences({ onSave }) {
     set('palette', id)
     applyPalette(id)
     syncTitlebar(document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light')
+    localStorage.setItem('sm_palette', id)
   }
 
   const save = async () => {
@@ -620,6 +621,9 @@ export default function Preferences({ onSave }) {
       body: JSON.stringify(prefs),
     })
     setSaving(false)
+    // Keep the pre-paint theme cache (index.html inline script) in sync
+    localStorage.setItem('sm_theme', prefs.theme === 'dark' ? 'dark' : 'light')
+    localStorage.setItem('sm_palette', prefs.palette || 'rose')
     toast('Preferences saved', 'success')
     onSave?.()
   }

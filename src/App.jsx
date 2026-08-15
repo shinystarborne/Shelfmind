@@ -312,6 +312,9 @@ export default function App() {
         document.documentElement.setAttribute('data-theme', theme)
         applyPalette(p.palette)
         syncTitlebar(theme)
+        // Keep the pre-paint cache (index.html inline script) in sync
+        localStorage.setItem('sm_theme', theme)
+        localStorage.setItem('sm_palette', p.palette || 'rose')
         // Quietly check for updates a few seconds after launch — respects the
         // beta-channel preference; only surfaces UI if something is actually found.
         if (window.electronAPI) setTimeout(() => checkForUpdate(!!p.beta_updates), 5000)
@@ -328,6 +331,7 @@ export default function App() {
     const next = prefs.theme === 'dark' ? 'light' : 'dark'
     document.documentElement.setAttribute('data-theme', next)
     syncTitlebar(next)
+    localStorage.setItem('sm_theme', next)
     setPrefs(p => ({ ...p, theme: next }))
     fetch(`${API}/preferences`, {
       method:  'PUT',
