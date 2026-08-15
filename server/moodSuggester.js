@@ -108,7 +108,10 @@ async function suggest(store, prefs, { moodText = '', chips = [], includeRereads
   const result = await chatComplete(prefs, [
     { role: 'system', content: system },
     { role: 'user',   content: user },
-  ], { json: true })   // no webSearch here — candidates are local profiles, a web lookup would only add cost
+    // no webSearch here — candidates are local profiles, a web lookup would
+    // only add cost. Long timeout: the shortlist prompt is several thousand
+    // tokens, and local models can take minutes to answer.
+  ], { json: true, timeoutMs: 300000 })
 
   const byId = new Map(shortlist.map(c => [c.id, c]))
   const suggestions = (Array.isArray(result.suggestions) ? result.suggestions : [])
