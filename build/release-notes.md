@@ -1,3 +1,8 @@
+## Beta 10 — sharper roasts
+- The roast now knows what you're currently reading and recently finished, so it won't mock you for not starting a series you're actually in the middle of.
+- Every roast is different now: a random angle per click, a rotating sample of your unread shelf, and a hotter model temperature.
+- Sharper persona — expect it to sting a little.
+
 ## Beta 9 — Roast my library
 - New "🔥 Roast my library" button in the Mood view: the AI reads your library stats (unread backlog, DNFs, rereads, favorite authors and genres) and delivers a sarcastic, affectionate critique of your reading habits.
 
