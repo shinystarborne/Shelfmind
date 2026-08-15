@@ -1,3 +1,6 @@
+## Beta 9 — Roast my library
+- New "🔥 Roast my library" button in the Mood view: the AI reads your library stats (unread backlog, DNFs, rereads, favorite authors and genres) and delivers a sarcastic, affectionate critique of your reading habits.
+
 ## Beta 8 — titlebar flash fix
 - The window buttons (minimize/maximize/close) and window background no longer flash light on startup — the app now opens with your theme's colors from the very first frame.
 
