@@ -1,3 +1,7 @@
+## Beta 6 — suggestion call fixes
+- Suggestions no longer fail with a timeout on local models — the AI gets up to 5 minutes to answer (it sends ~30 candidate profiles in one prompt; local models need a while), and the view says so while you wait.
+- If a suggestion still fails, the error message now says what actually happened instead of "is the server running?".
+
 ## Beta 5 — Cloudflare Access support for self-hosted LLMs
 - If your LLM server is behind Cloudflare Zero Trust (requests were hitting the Cloudflare login page): create a service token in your Zero Trust dashboard (Access → Service Auth → Service Tokens) and paste the Client-Id + Client-Secret into the new fields in Preferences → AI (Mood Suggestions).
 
