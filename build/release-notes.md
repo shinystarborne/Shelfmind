@@ -1,3 +1,8 @@
+## Beta 16 — AI pattern auto-tagging
+- New ✨ Auto-tag button on PDF tabs: the AI reads each pattern's first pages and tags it with craft (knitting/crochet/…), item type (sweater/socks/bag/…), yarn weight, and the named yarn — searchable as tags like `craft:knitting` or `weight:dk`.
+- Scanned patterns without a text layer are handled too — their first pages are sent as images to your vision model.
+- Same ✨ Auto-tag button per pattern in its drawer, with the AI's findings shown under "AI Pattern Info". Runs one pattern at a time with progress and a Cancel button.
+
 ## Beta 15 — one-click bookmarks, clicker key fixed for real
 - Bookmark the current page with **one click** on the 🔖 button in the PDF reader toolbar — saved instantly, no panel, no naming step (rename later in the 📑 Contents panel if you feel like it).
 - Fixed the clicker key assignment and sound toggle for real this time: the server was silently throwing away those settings, so the assigned key never stuck. Assign once, tick forever.
