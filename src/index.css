@@ -2637,6 +2637,7 @@ h3 { font-size: 18px; }
   display: flex;
   align-items: center;
   overflow: hidden;
+  position: relative;   /* anchor for the contents panel */
 }
 .pdf-scroll {
   flex: 1;
@@ -2847,6 +2848,189 @@ h3 { font-size: 18px; }
   background:
     linear-gradient(135deg, transparent 0 50%, var(--r-soft) 50% 58%, transparent 58% 66%, var(--r-soft) 66% 74%, transparent 74%);
 }
+
+/* ── Row clicker ─────────────────────────────────────────────────────────── */
+.pdf-row-clicker {
+  position: absolute;
+  z-index: 45;
+  min-width: 170px;
+  background: var(--r-chrome);
+  border: 1px solid var(--r-border);
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+.pdf-clicker-assign {
+  padding: 6px 10px;
+  font-size: 11px;
+  color: var(--r-accent);
+  border-bottom: 1px solid var(--r-border);
+}
+.pdf-clicker-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 10px 10px;
+  gap: 2px;
+}
+.pdf-clicker-label {
+  font-size: 11px;
+  color: var(--r-soft);
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pdf-clicker-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.pdf-clicker-btn { font-size: 18px; }
+.pdf-clicker-value {
+  min-width: 56px;
+  text-align: center;
+  font-size: 34px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--r-fg);
+  animation: pdf-clicker-pulse 0.18s ease;
+}
+@keyframes pdf-clicker-pulse {
+  0%   { transform: scale(1.25); color: var(--r-accent); }
+  100% { transform: scale(1); }
+}
+.pdf-clicker-subrow { display: flex; gap: 4px; min-height: 24px; align-items: center; }
+.pdf-clicker-subrow .reader-icon-btn { font-size: 11px; }
+.pdf-clicker-list {
+  border-top: 1px solid var(--r-border);
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 4px;
+}
+.pdf-clicker-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 4px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--r-fg);
+}
+.pdf-clicker-item.active { background: color-mix(in srgb, var(--r-accent) 16%, transparent); }
+.pdf-clicker-item-label {
+  flex: 1;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pdf-clicker-item-value {
+  font-variant-numeric: tabular-nums;
+  color: var(--r-soft);
+  min-width: 28px;
+  text-align: right;
+}
+.pdf-clicker-item .reader-icon-btn { font-size: 10px; padding: 2px 4px; }
+.pdf-clicker-rename {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 1px solid var(--r-border);
+  border-radius: 4px;
+  color: var(--r-fg);
+  font-size: 12px;
+  padding: 3px 6px;
+  outline: none;
+}
+.pdf-clicker-add {
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--r-soft);
+  font-size: 12px;
+  padding: 6px;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.pdf-clicker-add:hover { background: color-mix(in srgb, var(--r-fg) 8%, transparent); color: var(--r-fg); }
+
+/* ── Contents panel (outline + bookmarks) ────────────────────────────────── */
+.pdf-contents-panel {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 40;
+  width: 260px;
+  display: flex;
+  flex-direction: column;
+  background: var(--r-chrome);
+  border-right: 1px solid var(--r-border);
+  box-shadow: 4px 0 18px rgba(0, 0, 0, 0.2);
+  animation: reader-panel-in 0.18s ease;
+}
+.pdf-contents-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--r-fg);
+  border-bottom: 1px solid var(--r-border);
+}
+.pdf-contents-scroll { flex: 1; overflow-y: auto; padding: 6px 4px 12px; }
+.pdf-contents-section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--r-soft);
+  padding: 10px 10px 4px;
+}
+.pdf-contents-empty { font-size: 12px; color: var(--r-soft); padding: 4px 10px; }
+.pdf-outline-item {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--r-fg);
+  cursor: pointer;
+}
+.pdf-outline-item:hover { background: color-mix(in srgb, var(--r-fg) 8%, transparent); }
+.pdf-outline-item.no-page { cursor: default; color: var(--r-soft); }
+.pdf-outline-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pdf-outline-page { font-size: 11px; color: var(--r-soft); font-variant-numeric: tabular-nums; }
+.pdf-bookmark-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--r-fg);
+}
+.pdf-bookmark-item:hover { background: color-mix(in srgb, var(--r-fg) 8%, transparent); }
+.pdf-bookmark-label {
+  flex: 1;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pdf-bookmark-item .reader-icon-btn { font-size: 10px; padding: 2px 4px; }
+.pdf-bookmark-add { display: flex; gap: 4px; padding: 4px 8px; }
 
 /* ── Split view: alongside / duplicate ──────────────────────────────────── */
 .pdf-split-actions {
