@@ -1310,6 +1310,8 @@ class Store {
     if (fields.row_counters !== undefined) d.row_counters = Array.isArray(fields.row_counters) ? fields.row_counters : []
     if (fields.bookmarks    !== undefined) d.bookmarks    = Array.isArray(fields.bookmarks)    ? fields.bookmarks    : []
     if (typeof fields.active_counter === 'string' || fields.active_counter === null) d.active_counter = fields.active_counter
+    // AI pattern tagging result — { craft, item_type, yarn_weight, yarn, source, model, tagged_at, failed }
+    if (fields.auto !== undefined) d.auto = fields.auto
     writeJson(this._pdfDocsFile, this.pdfDocs)
     return d
   }
