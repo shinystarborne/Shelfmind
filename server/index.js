@@ -1244,6 +1244,23 @@ function startServer(port = 3001) {
       res.json({ ok: true })
     })
 
+    // Reader annotations (highlighter/pencil/text marks) — whole-doc vector
+    // data keyed by page; the renderer PUTs the full set, debounced.
+    app.get('/api/pdf-docs/:id/annotations', (req, res) => {
+      if (!store.getPdfDoc(req.params.id)) return res.status(404).json({ error: 'Not found' })
+      res.json(store.getPdfAnnotations(req.params.id))
+    })
+
+    app.put('/api/pdf-docs/:id/annotations', (req, res) => {
+      if (!store.getPdfDoc(req.params.id)) return res.status(404).json({ error: 'Not found' })
+      const pages = req.body?.pages
+      if (!pages || typeof pages !== 'object' || Array.isArray(pages)) {
+        return res.status(400).json({ error: 'pages object required' })
+      }
+      store.savePdfAnnotations(req.params.id, pages)
+      res.json({ ok: true })
+    })
+
     // Raw PDF bytes — used client-side by pdf.js to render a cover thumbnail
     app.get('/api/pdf-docs/:id/file', (req, res) => {
       const doc = store.getPdfDoc(req.params.id)

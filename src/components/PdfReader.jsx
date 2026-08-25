@@ -5,6 +5,11 @@ import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import PdfPinPanel from './PdfPinPanel'
 import PdfRowClicker from './PdfRowClicker'
 import PdfContentsPanel from './PdfContentsPanel'
+import {
+  HIGHLIGHT_COLORS, PENCIL_COLORS, TEXT_COLOR,
+  HIGHLIGHT_WIDTH, PENCIL_WIDTH, TEXT_SIZE,
+  drawItem, hitTestItem,
+} from '../lib/annotations'
 
 // Same pin note as pdfThumbnail.js: pdfjs-dist 4.x for this Electron version
 GlobalWorkerOptions.workerSrc = workerUrl
@@ -121,6 +126,54 @@ export default function PdfReader({ doc: pdfDoc, target, onClose, onOpenAlongsid
   // ── Split view: sibling-doc picker for "Open alongside" ──
   const [siblingPickerOpen, setSiblingPickerOpen] = useState(false)
   const [siblingDocs, setSiblingDocs]              = useState([])
+
+  // ── Annotations: highlighter/pencil/text marks drawn on a per-page overlay
+  // canvas; vector data in page-relative coords, persisted whole-doc debounced ──
+  const [annotTool, setAnnotTool]     = useState(null)   // null | 'highlight' | 'pencil' | 'text' | 'eraser'
+  const [annotColor, setAnnotColor]   = useState(HIGHLIGHT_COLORS[0])
+  const [annotations, setAnnotations] = useState(null)   // null = loading; { [page]: [item] }
+  const [textDraft, setTextDraft]     = useState(null)   // { pageIdx, x, y, value } while typing
+  const textDraftRef                  = useRef(null)
+  textDraftRef.current                = textDraft
+  const annotCanvasRef                = useRef([])
+  const draftStrokeRef                = useRef(null)     // { pageIdx, item } | { pageIdx, erasing:true }
+  const annotationsRef                = useRef({})
+  const annotSaveTimer                = useRef(null)
+  const annotToolRef                  = useRef(null)
+  annotToolRef.current                = annotTool
+
+  useEffect(() => {
+    let alive = true
+    fetch(`${API}/pdf-docs/${pdfDoc.id}/annotations`)
+      .then(r => (r.ok ? r.json() : {}))
+      .then(a => { if (alive) { setAnnotations(a || {}); annotationsRef.current = a || {} } })
+      .catch(() => { if (alive) { setAnnotations({}); annotationsRef.current = {} } })
+    return () => { alive = false }
+  }, [pdfDoc.id])
+
+  const persistAnnot = useCallback((next) => {
+    clearTimeout(annotSaveTimer.current)
+    annotSaveTimer.current = setTimeout(() => {
+      fetch(`${API}/pdf-docs/${pdfDoc.id}/annotations`, {
+        method:  'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ pages: next }),
+      }).catch(() => {})
+    }, 600)
+  }, [pdfDoc.id])
+
+  const changeAnnotations = useCallback((fn) => {
+    setAnnotations(prev => {
+      const next = fn(prev || {})
+      annotationsRef.current = next
+      persistAnnot(next)
+      return next
+    })
+  }, [persistAnnot])
+
+  const addAnnotItem = useCallback((page, item) => {
+    changeAnnotations(prev => ({ ...prev, [page]: [...(prev[page] || []), item] }))
+  }, [changeAnnotations])
 
   // ── Keyboard shortcuts help flyout ──
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
@@ -459,6 +512,7 @@ export default function PdfReader({ doc: pdfDoc, target, onClose, onOpenAlongsid
   // ── Pinned reference crops ───────────────────────────────────────────────────
   const startPinMode = useCallback(() => {
     if (pins.length >= 5) { toast('Max 5 pins — remove one first (hover a numbered chip)', 'error'); return }
+    setAnnotTool(null)   // pin-drawing and annotating are mutually exclusive
     setPinMode(true)
   }, [pins.length, toast])
 
@@ -525,6 +579,124 @@ export default function PdfReader({ doc: pdfDoc, target, onClose, onOpenAlongsid
     setDocMeta(m => m ? { ...m, pins: (m.pins || []).filter(p => p.id !== pinId) } : m)
     await fetch(`${API}/pdf-docs/${pdfDoc.id}/pins/${pinId}`, { method: 'DELETE' }).catch(() => {})
   }, [pdfDoc.id])
+
+  // ── Annotation drawing ──────────────────────────────────────────────────────
+  const redrawAnnotPage = useCallback((i) => {
+    const canvas = annotCanvasRef.current[i]
+    if (!canvas) return
+    const dpr = Math.min(window.devicePixelRatio || 1, 2)
+    const W = canvas.clientWidth, H = canvas.clientHeight
+    if (!W || !H) return
+    if (canvas.width  !== Math.round(W * dpr)) canvas.width  = Math.round(W * dpr)
+    if (canvas.height !== Math.round(H * dpr)) canvas.height = Math.round(H * dpr)
+    const ctx = canvas.getContext('2d')
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    ctx.clearRect(0, 0, W, H)
+    for (const item of (annotationsRef.current[i + 1] || [])) drawItem(ctx, item, W, H)
+  }, [])
+
+  useEffect(() => {
+    annotCanvasRef.current.forEach((_, i) => redrawAnnotPage(i))
+  }, [annotations, scale, dims, redrawAnnotPage])
+
+  const annotRelPos = (e, i) => {
+    const rect = annotCanvasRef.current[i]?.getBoundingClientRect()
+    if (!rect || !rect.width) return null
+    return { x: (e.clientX - rect.left) / rect.width, y: (e.clientY - rect.top) / rect.height, W: rect.width, H: rect.height }
+  }
+
+  const eraseAnnotAt = useCallback((page, p) => {
+    const items = annotationsRef.current[page]
+    if (!items?.length) return
+    const next = items.filter(it => !hitTestItem(it, p.x, p.y, p.W, p.H, 8))
+    if (next.length === items.length) return
+    changeAnnotations(prev => {
+      const copy = { ...prev }
+      if (next.length) copy[page] = next
+      else delete copy[page]
+      return copy
+    })
+  }, [changeAnnotations])
+
+  const onAnnotPointerDown = useCallback((e, i) => {
+    if (!annotTool) return
+    const p = annotRelPos(e, i)
+    if (!p) return
+    e.preventDefault()
+    e.currentTarget.setPointerCapture?.(e.pointerId)
+    if (annotTool === 'eraser') {
+      eraseAnnotAt(i + 1, p)
+      draftStrokeRef.current = { pageIdx: i, erasing: true }
+      return
+    }
+    if (annotTool === 'text') {
+      setTextDraft({ pageIdx: i, x: p.x, y: p.y, value: '' })
+      return
+    }
+    draftStrokeRef.current = {
+      pageIdx: i,
+      item: {
+        type: 'stroke', tool: annotTool, color: annotColor,
+        width: annotTool === 'highlight' ? HIGHLIGHT_WIDTH : PENCIL_WIDTH,
+        points: [[p.x, p.y]],
+      },
+    }
+  }, [annotTool, annotColor, eraseAnnotAt])
+
+  const onAnnotPointerMove = useCallback((e) => {
+    const d = draftStrokeRef.current
+    if (!d) return
+    const p = annotRelPos(e, d.pageIdx)
+    if (!p) return
+    if (d.erasing) { eraseAnnotAt(d.pageIdx + 1, p); return }
+    const pts  = d.item.points
+    const last = pts[pts.length - 1]
+    if (Math.hypot((p.x - last[0]) * p.W, (p.y - last[1]) * p.H) < 1.5) return   // ignore micro-moves
+    pts.push([p.x, p.y])
+    // Incremental draw of just the new segment — a full redraw per move is
+    // wasted work on pages dense with marks.
+    const canvas = annotCanvasRef.current[d.pageIdx]
+    if (canvas) {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2)
+      const ctx = canvas.getContext('2d')
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      drawItem(ctx, { ...d.item, points: [last, [p.x, p.y]] }, p.W, p.H)
+    }
+  }, [eraseAnnotAt])
+
+  const onAnnotPointerUp = useCallback(() => {
+    const d = draftStrokeRef.current
+    draftStrokeRef.current = null
+    if (!d || d.erasing) return
+    addAnnotItem(d.pageIdx + 1, d.item)
+  }, [addAnnotItem])
+
+  const commitAnnotText = useCallback(() => {
+    const d = textDraftRef.current
+    setTextDraft(null)
+    const value = d?.value.trim()
+    if (!d || !value) return
+    addAnnotItem(d.pageIdx + 1, { type: 'text', x: d.x, y: d.y, text: value, color: TEXT_COLOR, size: TEXT_SIZE })
+  }, [addAnnotItem])
+
+  const undoAnnot = useCallback(() => {
+    const page = curPageRef.current
+    changeAnnotations(prev => {
+      const items = prev[page]
+      if (!items?.length) return prev
+      const copy = { ...prev }
+      if (items.length > 1) copy[page] = items.slice(0, -1)
+      else delete copy[page]
+      return copy
+    })
+  }, [changeAnnotations])
+  const undoAnnotRef = useRef(undoAnnot)
+  undoAnnotRef.current = undoAnnot
+
+  const toggleAnnotTool = useCallback((tool) => {
+    cancelPinModeRef.current()   // tools are mutually exclusive with pin-drawing
+    setAnnotTool(t => (t === tool ? null : tool))
+  }, [])
 
   // ── Split view: "Open alongside" sibling picker ─────────────────────────────
   const openSiblingPicker = useCallback(async () => {
@@ -658,6 +830,8 @@ export default function PdfReader({ doc: pdfDoc, target, onClose, onOpenAlongsid
   useEffect(() => {
     const onKey = (e) => {
       if (!activeRef.current) return   // split view: only the hovered/focused pane reacts to shortcuts
+      if (annotToolRef.current && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undoAnnotRef.current(); return }
+      if (annotToolRef.current && e.key === 'Escape') { setAnnotTool(null); return }
       if (pinModeRef.current && e.key === 'Escape') { cancelPinModeRef.current(); return }
       if (searchOpen && e.key === 'Escape') { closeSearchRef.current(); return }
       if (shortcutsOpen && e.key === 'Escape') { setShortcutsOpen(false); return }
@@ -732,6 +906,11 @@ export default function PdfReader({ doc: pdfDoc, target, onClose, onOpenAlongsid
             onClick={() => (searchOpen ? closeSearch() : openSearch())}
             title="Search in this PDF (Ctrl+F)"
           >🔎</button>
+          <button
+            className={`reader-icon-btn ${annotTool ? 'active' : ''}`}
+            onClick={() => toggleAnnotTool('highlight')}
+            title="Annotate — highlighter, pencil, text"
+          >🖊</button>
           <button className="reader-icon-btn" onClick={() => zoom(1 / 1.15)} title="Zoom out (−)">−</button>
           <span className="pdf-zoom-pct">{scale ? `${Math.round(scale * 100)}%` : '…'}</span>
           <button className="reader-icon-btn" onClick={() => zoom(1.15)} title="Zoom in (+)">+</button>
@@ -799,6 +978,31 @@ export default function PdfReader({ doc: pdfDoc, target, onClose, onOpenAlongsid
         <div className="pdf-pin-hint">Drag a rectangle around the area you want to pin — Esc to cancel</div>
       )}
 
+      {/* Annotation toolbar */}
+      {annotTool && (
+        <div className="pdf-annot-bar">
+          <button className={`reader-icon-btn ${annotTool === 'highlight' ? 'active' : ''}`} onClick={() => toggleAnnotTool('highlight')} title="Highlighter">🖊</button>
+          <button className={`reader-icon-btn ${annotTool === 'pencil' ? 'active' : ''}`} onClick={() => toggleAnnotTool('pencil')} title="Pencil">✏️</button>
+          <button className={`reader-icon-btn ${annotTool === 'text' ? 'active' : ''}`} onClick={() => toggleAnnotTool('text')} title="Text note">🅣</button>
+          <button className={`reader-icon-btn ${annotTool === 'eraser' ? 'active' : ''}`} onClick={() => toggleAnnotTool('eraser')} title="Eraser">⌫</button>
+          {(annotTool === 'highlight' || annotTool === 'pencil') && (
+            <span className="pdf-annot-colors">
+              {(annotTool === 'highlight' ? HIGHLIGHT_COLORS : PENCIL_COLORS).map(c => (
+                <button
+                  key={c}
+                  className={`pdf-annot-swatch ${annotColor === c ? 'active' : ''}`}
+                  style={{ background: c }}
+                  onClick={() => setAnnotColor(c)}
+                  title={c}
+                />
+              ))}
+            </span>
+          )}
+          <button className="reader-icon-btn" onClick={undoAnnot} title="Undo last mark on this page (Ctrl+Z)">↶</button>
+          <button className="reader-icon-btn" onClick={() => setAnnotTool(null)} title="Done annotating (Esc)">✕</button>
+        </div>
+      )}
+
       {/* In-PDF search bar */}
       {searchOpen && (
         <div className="reader-searchbar">
@@ -864,6 +1068,25 @@ export default function PdfReader({ doc: pdfDoc, target, onClose, onOpenAlongsid
                     />
                   )}
                 </div>
+                <canvas
+                  className={`pdf-annot-layer ${annotTool ? 'active' : ''}`}
+                  ref={el => { annotCanvasRef.current[i] = el }}
+                  onPointerDown={e => onAnnotPointerDown(e, i)}
+                  onPointerMove={onAnnotPointerMove}
+                  onPointerUp={onAnnotPointerUp}
+                />
+                {textDraft && textDraft.pageIdx === i && (
+                  <input
+                    className="pdf-annot-text-input"
+                    style={{ left: `${textDraft.x * 100}%`, top: `${textDraft.y * 100}%` }}
+                    value={textDraft.value}
+                    autoFocus
+                    placeholder="note…"
+                    onChange={e => setTextDraft(t => ({ ...t, value: e.target.value }))}
+                    onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') commitAnnotText(); if (e.key === 'Escape') setTextDraft(null) }}
+                    onBlur={commitAnnotText}
+                  />
+                )}
                 <div className="pdf-page-num">{i + 1}</div>
               </div>
             ))}
