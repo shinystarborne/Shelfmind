@@ -1,3 +1,8 @@
+## Beta 14 — annotations in the PDF reader + clicker fix
+- New 🖊 annotation tools in the PDF reader: highlighter and pencil (with colors), text notes you click into place, an eraser, and undo (Ctrl+Z). Marks stay exactly where you put them when you zoom, and they're saved per pattern — perfect for ticking off chart rows.
+- Fixed dead clicker buttons: assign-key (⌨), the counter list (▾), the sound toggle (🔊) and close now work (a dragging bug swallowed their clicks).
+- Contents panel is now tabbed — Outline and 🔖 Bookmarks side by side — with a big "Bookmark page N" button that saves in one click.
+
 ## Beta 13 — row clicker + jump-to bookmarks
 - New 🧶 row clicker in the PDF reader: named counters saved per pattern ("row", "sleeve 1", a whole second WIP…), one active at a time. Assign any keyboard key as the clicker — press it to count, Shift+key to count down — with a mechanical click sound (mutable) so you always know the row registered.
 - New 🔖 Contents panel in the PDF reader: jump using the book's own built-in outline when the PDF has one, plus your own named bookmarks ("Socks — chart B") that work in every PDF and are saved per pattern.
