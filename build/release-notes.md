@@ -1,3 +1,7 @@
+## Beta 12 — drag & drop onto lists
+- Drag any book or PDF card straight onto a reading list in the sidebar — the list highlights as you hover, drop to add. Works from the library grid, list view rows, and PDF tabs.
+- New ＋ button on card hover and an "Add to List" button in the book/PDF drawer: pick a list or create a new one right there. Perfect for a "knitting queue" list.
+
 ## Beta 11 — PDF crash fix, roast history + Continue Reading fix
 - Fixed an out-of-memory crash when opening a PDF tab with many PDFs: cover thumbnails are now generated two at a time from just the first page (previously every PDF was downloaded in full at once) and memory is freed after each one.
 - New "Index the text inside PDFs too" toggle in Preferences → Search Index — turn it off for image-heavy PDFs (scans, craft patterns) to keep index builds fast. Titles and tags stay searchable either way.
