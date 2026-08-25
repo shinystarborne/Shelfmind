@@ -8,14 +8,13 @@ const newBookmark = (page, label) => ({
   label,
 })
 
-// Side panel for jumping around a pattern PDF without endless scrolling:
-// the book's own embedded outline (when the PDF has one — pattern books and
-// magazines often do) plus the user's own named page bookmarks, which are
+// Side panel for jumping around a pattern PDF without endless scrolling.
+// Two tabs: the PDF's own embedded outline (when it has one — pattern books
+// and magazines often do) and the user's own named page bookmarks, which are
 // always available and persist on the doc (bookmarks in pdfDocs.json).
 export default function PdfContentsPanel({ docId, docMeta, patchDocMeta, pdfDocRef, docReady, curPage, onJump, onClose }) {
-  const [outline,     setOutline]     = useState(null)   // null = loading, [] = none
-  const [adding,      setAdding]      = useState(false)
-  const [newLabel,    setNewLabel]    = useState('')
+  const [tab,         setTab]         = useState('outline')   // 'outline' | 'bookmarks'
+  const [outline,     setOutline]     = useState(null)        // null = loading, [] = none
   const [renamingId,  setRenamingId]  = useState(null)
   const [renameDraft, setRenameDraft] = useState('')
 
@@ -49,6 +48,11 @@ export default function PdfContentsPanel({ docId, docMeta, patchDocMeta, pdfDocR
     return () => { alive = false }
   }, [pdfDocRef, docReady])
 
+  // No outline → land on the bookmarks tab instead of an empty first screen.
+  useEffect(() => {
+    if (outline && outline.length === 0) setTab('bookmarks')
+  }, [outline])
+
   const bookmarks = [...(docMeta?.bookmarks || [])].sort((a, b) => a.page - b.page)
 
   const saveBookmarks = (next) => {
@@ -60,11 +64,9 @@ export default function PdfContentsPanel({ docId, docMeta, patchDocMeta, pdfDocR
     }).catch(() => {})
   }
 
-  const addBookmark = () => {
-    const label = newLabel.trim() || `page ${curPage}`
-    setNewLabel('')
-    setAdding(false)
-    saveBookmarks([...(docMeta?.bookmarks || []), newBookmark(curPage, label)])
+  // One click = bookmarked, sensible default name; rename afterwards via ✏️.
+  const bookmarkCurrentPage = () => {
+    saveBookmarks([...(docMeta?.bookmarks || []), newBookmark(curPage, `Page ${curPage}`)])
   }
 
   const renameBookmark = (id) => {
@@ -94,60 +96,61 @@ export default function PdfContentsPanel({ docId, docMeta, patchDocMeta, pdfDocR
   return (
     <div className="pdf-contents-panel">
       <div className="pdf-contents-header">
-        <span>Contents</span>
+        <div className="pdf-contents-tabs">
+          <button
+            className={`pdf-contents-tab ${tab === 'outline' ? 'active' : ''}`}
+            onClick={() => setTab('outline')}
+          >Outline</button>
+          <button
+            className={`pdf-contents-tab ${tab === 'bookmarks' ? 'active' : ''}`}
+            onClick={() => setTab('bookmarks')}
+          >🔖 Bookmarks{bookmarks.length > 0 ? ` (${bookmarks.length})` : ''}</button>
+        </div>
         <button className="reader-icon-btn" onClick={onClose} title="Close panel">✕</button>
       </div>
 
       <div className="pdf-contents-scroll">
-        {outline === null && <div className="pdf-contents-empty">Reading outline…</div>}
-        {outline !== null && outline.length > 0 && (
+        {tab === 'outline' && (
           <>
-            <div className="pdf-contents-section">In this PDF</div>
-            {renderOutline(outline)}
+            {outline === null && <div className="pdf-contents-empty">Reading outline…</div>}
+            {outline !== null && outline.length === 0 && (
+              <div className="pdf-contents-empty">This PDF has no built-in outline — use bookmarks instead.</div>
+            )}
+            {outline !== null && outline.length > 0 && renderOutline(outline)}
           </>
         )}
 
-        <div className="pdf-contents-section">
-          My bookmarks
-          <button className="reader-icon-btn" onClick={() => { setAdding(a => !a); setNewLabel('') }} title="Bookmark the current page">＋</button>
-        </div>
-        {adding && (
-          <div className="pdf-bookmark-add">
-            <input
-              className="pdf-clicker-rename"
-              placeholder={`name for page ${curPage}…`}
-              value={newLabel}
-              autoFocus
-              onChange={e => setNewLabel(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') addBookmark(); if (e.key === 'Escape') setAdding(false) }}
-            />
-            <button className="reader-icon-btn" onClick={addBookmark} title="Save bookmark">🔖</button>
-          </div>
-        )}
-        {bookmarks.length === 0 && !adding && (
-          <div className="pdf-contents-empty">No bookmarks yet — press ＋ to mark this page.</div>
-        )}
-        {bookmarks.map(b => (
-          <div key={b.id} className="pdf-bookmark-item">
-            {renamingId === b.id ? (
-              <input
-                className="pdf-clicker-rename"
-                value={renameDraft}
-                autoFocus
-                onChange={e => setRenameDraft(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') renameBookmark(b.id); if (e.key === 'Escape') setRenamingId(null) }}
-                onBlur={() => renameBookmark(b.id)}
-              />
-            ) : (
-              <span className="pdf-bookmark-label" title={`Go to page ${b.page}`} onClick={() => onJump(b.page)}>
-                🔖 {b.label}
-              </span>
+        {tab === 'bookmarks' && (
+          <>
+            <button className="pdf-bookmark-add-btn" onClick={bookmarkCurrentPage}>
+              🔖 Bookmark page {curPage}
+            </button>
+            {bookmarks.length === 0 && (
+              <div className="pdf-contents-empty">No bookmarks yet.</div>
             )}
-            <span className="pdf-outline-page">{b.page}</span>
-            <button className="reader-icon-btn" onClick={() => { setRenamingId(b.id); setRenameDraft(b.label) }} title="Rename">✏️</button>
-            <button className="reader-icon-btn" onClick={() => deleteBookmark(b.id)} title="Delete bookmark">✕</button>
-          </div>
-        ))}
+            {bookmarks.map(b => (
+              <div key={b.id} className="pdf-bookmark-item">
+                {renamingId === b.id ? (
+                  <input
+                    className="pdf-clicker-rename"
+                    value={renameDraft}
+                    autoFocus
+                    onChange={e => setRenameDraft(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') renameBookmark(b.id); if (e.key === 'Escape') setRenamingId(null) }}
+                    onBlur={() => renameBookmark(b.id)}
+                  />
+                ) : (
+                  <span className="pdf-bookmark-label" title={`Go to page ${b.page}`} onClick={() => onJump(b.page)}>
+                    🔖 {b.label}
+                  </span>
+                )}
+                <span className="pdf-outline-page">{b.page}</span>
+                <button className="reader-icon-btn" onClick={() => { setRenamingId(b.id); setRenameDraft(b.label) }} title="Rename">✏️</button>
+                <button className="reader-icon-btn" onClick={() => deleteBookmark(b.id)} title="Delete bookmark">✕</button>
+              </div>
+            ))}
+          </>
+        )}
       </div>
     </div>
   )

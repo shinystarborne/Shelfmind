@@ -52,6 +52,7 @@ export default function PdfPinPanel({ pin, index, pdfDocRef, onClose }) {
   }, [pdfDocRef, pin, panelScale])
 
   const onDragPointerDown = useCallback((e) => {
+    if (e.target.closest('button')) return   // header buttons must stay clickable
     dragRef.current = { startX: e.clientX, startY: e.clientY, origX: pos.x, origY: pos.y }
     e.currentTarget.setPointerCapture?.(e.pointerId)
   }, [pos])
