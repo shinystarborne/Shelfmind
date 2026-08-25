@@ -704,7 +704,7 @@ function startServer(port = 3001) {
     app.get('/api/preferences', (_, res) => res.json(store.getPrefs()))
 
     app.put('/api/preferences', (req, res) => {
-      const allowed = ['library_path', 'kindle_email', 'kindle_mode', 'theme', 'palette', 'default_view', 'reading_goal', 'quotes_json_path', 'beta_updates', 'abs_url', 'abs_token', 'openrouter_key', 'openrouter_model', 'openrouter_web_search', 'llm_base_url', 'llm_cf_client_id', 'llm_cf_client_secret']
+      const allowed = ['library_path', 'kindle_email', 'kindle_mode', 'theme', 'palette', 'default_view', 'reading_goal', 'quotes_json_path', 'beta_updates', 'abs_url', 'abs_token', 'openrouter_key', 'openrouter_model', 'openrouter_web_search', 'llm_base_url', 'llm_cf_client_id', 'llm_cf_client_secret', 'index_pdf_text', 'row_clicker_key', 'row_clicker_sound']
       const update  = {}
       for (const k of allowed) { if (k in req.body) update[k] = req.body[k] }
       store.setPrefs(update)

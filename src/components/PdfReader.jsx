@@ -800,6 +800,21 @@ export default function PdfReader({ doc: pdfDoc, target, onClose, onOpenAlongsid
     }
   }, [renderPage, dims.length])
 
+  // One-click bookmark of the current page — default name, rename later in
+  // the contents panel. Zero dialogs: speed beats ceremony here.
+  const bookmarkCurrentPage = useCallback(() => {
+    const cur = curPageRef.current
+    const bm  = { id: `b${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, page: cur, label: `Page ${cur}` }
+    const next = [...(docMeta?.bookmarks || []), bm]
+    patchDocMeta({ bookmarks: next })
+    fetch(`${API}/pdf-docs/${pdfDoc.id}`, {
+      method:  'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ bookmarks: next }),
+    }).catch(() => {})
+    toast(`Bookmarked page ${cur}`, 'success')
+  }, [docMeta, patchDocMeta, pdfDoc.id, toast])
+
   // Jump to the current hit whenever it changes (typing, prev/next, or Enter)
   useEffect(() => {
     if (!searchOpen || pdfHits.length === 0) return
@@ -892,10 +907,15 @@ export default function PdfReader({ doc: pdfDoc, target, onClose, onOpenAlongsid
             <span className="pdf-page-indicator">{curPage} / {numPages}</span>
           )}
           <button
+            className="reader-icon-btn"
+            onClick={bookmarkCurrentPage}
+            title="Bookmark this page — one click, rename later"
+          >🔖</button>
+          <button
             className={`reader-icon-btn ${contentsOpen ? 'active' : ''}`}
             onClick={() => setContentsOpen(o => !o)}
             title="Contents — PDF outline + your bookmarks"
-          >🔖</button>
+          >📑</button>
           <button
             className={`reader-icon-btn ${clickerOpen ? 'active' : ''}`}
             onClick={() => setClickerOpen(o => !o)}
