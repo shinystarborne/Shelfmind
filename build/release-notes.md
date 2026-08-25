@@ -1,3 +1,7 @@
+## Beta 15 — one-click bookmarks, clicker key fixed for real
+- Bookmark the current page with **one click** on the 🔖 button in the PDF reader toolbar — saved instantly, no panel, no naming step (rename later in the 📑 Contents panel if you feel like it).
+- Fixed the clicker key assignment and sound toggle for real this time: the server was silently throwing away those settings, so the assigned key never stuck. Assign once, tick forever.
+
 ## Beta 14 — annotations in the PDF reader + clicker fix
 - New 🖊 annotation tools in the PDF reader: highlighter and pencil (with colors), text notes you click into place, an eraser, and undo (Ctrl+Z). Marks stay exactly where you put them when you zoom, and they're saved per pattern — perfect for ticking off chart rows.
 - Fixed dead clicker buttons: assign-key (⌨), the counter list (▾), the sound toggle (🔊) and close now work (a dragging bug swallowed their clicks).
