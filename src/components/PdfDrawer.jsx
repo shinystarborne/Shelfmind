@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { API, useApp } from '../App'
 import { pdfCoverSrc } from './PdfCard'
 import { initials } from './BookCard'
+import AddToListMenu from './AddToListMenu'
 
 // ── Tags editor (custom tags only — chips + input) ────────────────────────────
 function DocTags({ tags, onSave }) {
@@ -43,6 +44,7 @@ export default function PdfDrawer({ docId, onClose, onChanged, onRemoved }) {
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleDraft,   setTitleDraft]   = useState('')
   const [confirmDel,   setConfirmDel]   = useState(false)
+  const [showAddMenu,  setShowAddMenu]  = useState(false)
 
   const load = () => fetch(`${API}/pdf-docs/${docId}`).then(r => r.json()).then(d => { setDoc(d); setNote(d.note || '') })
   useEffect(() => { load(); setEditingTitle(false); setConfirmDel(false) }, [docId])
@@ -200,6 +202,12 @@ export default function PdfDrawer({ docId, onClose, onChanged, onRemoved }) {
                 <button className="btn btn-secondary" onClick={() => window.electronAPI.showItemInFolder(doc.path)}>
                   📁 Show in Explorer
                 </button>
+              )}
+              <button className="btn btn-secondary" onClick={() => setShowAddMenu(s => !s)}>
+                📋 Add to List
+              </button>
+              {showAddMenu && (
+                <AddToListMenu kind="pdf" id={doc.id} onClose={() => setShowAddMenu(false)} />
               )}
               <button
                 className="btn btn-secondary"

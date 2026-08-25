@@ -1,3 +1,7 @@
+import { useState } from 'react'
+import AddToListMenu from './AddToListMenu'
+import { startItemDrag } from '../lib/listDnd'
+
 const API_BASE = `http://${window.location.hostname || 'localhost'}:3001`
 
 // Thumbnail URL for a /covers/{id}.{ext} path — 400px JPEGs generated
@@ -48,6 +52,7 @@ function MiniStars({ rating }) {
 }
 
 export default function BookCard({ book, selected, onClick, selectable, checked, onCheck }) {
+  const [showAddMenu, setShowAddMenu] = useState(false)
   const src = coverSrc(book, { thumb: true })
   const init = initials(book.title)
   const status = book.read_status || 'unread'
@@ -72,7 +77,11 @@ export default function BookCard({ book, selected, onClick, selectable, checked,
   }
 
   return (
-    <div className="book-card-wrap">
+    <div
+      className="book-card-wrap"
+      draggable
+      onDragStart={e => startItemDrag(e, 'book', book.id)}
+    >
       {selectable && (
         <input
           type="checkbox"
@@ -81,6 +90,14 @@ export default function BookCard({ book, selected, onClick, selectable, checked,
           onChange={e => { e.stopPropagation(); onCheck?.(book.id, e.target.checked) }}
           onClick={e => e.stopPropagation()}
         />
+      )}
+      <button
+        className="card-add-btn"
+        title="Add to a list"
+        onClick={e => { e.stopPropagation(); setShowAddMenu(s => !s) }}
+      >＋</button>
+      {showAddMenu && (
+        <AddToListMenu kind="book" id={book.id} onClose={() => setShowAddMenu(false)} />
       )}
       <div
         className={`book-card ${selected ? 'selected' : ''}`}
@@ -136,6 +153,8 @@ export function BookListItem({ book, selected, onClick, selectable, checked, onC
     <div
       className={`book-list-item ${selected ? 'selected' : ''}`}
       onClick={() => onClick(book)}
+      draggable
+      onDragStart={e => startItemDrag(e, 'book', book.id)}
     >
       {selectable && (
         <input
