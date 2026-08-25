@@ -113,6 +113,7 @@ class Store {
     this._highlightsFile = path.join(dataDir, 'highlights.json')
     this._smartShelvesFile = path.join(dataDir, 'smartShelves.json')
     this._audioMarksFile = path.join(dataDir, 'audioMarks.json')
+    this._pdfAnnotsFile = path.join(dataDir, 'pdfAnnotations.json')
 
     this.books   = readJson(this._booksFile,   [])
     this.states  = readJson(this._statesFile,  {})
@@ -123,6 +124,9 @@ class Store {
     this.pdfTabs = readJson(this._pdfTabsFile, [])
     this.pdfDocs = readJson(this._pdfDocsFile, [])
     this.highlights = readJson(this._highlightsFile, {})   // bookId → [highlight]
+    // PDF reader annotations (highlighter/pencil/text) — docId → { page → [item] }.
+    // Items are vector data in page-relative 0..1 coordinates; see PdfReader.
+    this.pdfAnnotations = readJson(this._pdfAnnotsFile, {})
 
     // Seed default prefs
     const defaults = {
@@ -1259,11 +1263,20 @@ class Store {
     return true
   }
 
+  getPdfAnnotations(docId)        { return this.pdfAnnotations[docId] || {} }
+  savePdfAnnotations(docId, pages) {
+    if (pages && Object.keys(pages).length) this.pdfAnnotations[docId] = pages
+    else delete this.pdfAnnotations[docId]
+    writeJson(this._pdfAnnotsFile, this.pdfAnnotations)
+  }
+
   deletePdfDoc(id) {
     const idx = this.pdfDocs.findIndex(d => d.id === id)
     if (idx === -1) return false
     this.pdfDocs.splice(idx, 1)
+    delete this.pdfAnnotations[id]
     writeJson(this._pdfDocsFile, this.pdfDocs)
+    writeJson(this._pdfAnnotsFile, this.pdfAnnotations)
     this._removePdfDocsFromLists([id])
     if (this._searchIndex) {
       try { this._searchIndex.deleteDocument('pdf', id) } catch {}

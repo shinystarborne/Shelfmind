@@ -2747,6 +2747,63 @@ h3 { font-size: 18px; }
   pointer-events: auto;
   cursor: crosshair;
 }
+
+/* ── Annotations overlay + toolbar ───────────────────────────────────────── */
+.pdf-annot-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 4;
+  pointer-events: none;
+}
+.pdf-annot-layer.active {
+  pointer-events: auto;
+  cursor: crosshair;
+  touch-action: none;
+}
+.pdf-annot-bar {
+  position: absolute;
+  top: 56px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 11;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--r-chrome);
+  border: 1px solid var(--r-border);
+  border-radius: 8px;
+  padding: 4px 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+.pdf-annot-colors {
+  display: flex;
+  gap: 4px;
+  padding: 0 6px;
+  border-left: 1px solid var(--r-border);
+}
+.pdf-annot-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 99px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+}
+.pdf-annot-swatch.active { border-color: var(--r-fg); }
+.pdf-annot-text-input {
+  position: absolute;
+  z-index: 5;
+  background: var(--r-chrome);
+  border: 1px solid var(--r-accent);
+  border-radius: 4px;
+  color: var(--r-fg);
+  font-size: 13px;
+  padding: 3px 6px;
+  outline: none;
+  min-width: 140px;
+}
 .pdf-pin-draft-rect {
   position: absolute;
   border: 2px dashed var(--r-accent);
