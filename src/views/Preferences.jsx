@@ -866,6 +866,19 @@ export default function Preferences({ onSave }) {
           >
             {indexState.running ? <span className="spin">↻</span> : '🔎'} Build Search Index
           </button>
+          <div className="pref-row" style={{ marginTop: 14 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text)', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={prefs.index_pdf_text !== false}
+                onChange={e => set('index_pdf_text', e.target.checked)}
+              />
+              Index the text inside PDFs too
+            </label>
+            <div className="pref-hint">
+              Turn this off for image-heavy PDFs (scans, craft patterns) — extracting their text is slow and finds nothing. Titles and tags stay searchable either way.
+            </div>
+          </div>
         </div>
 
         {/* Library MD Import */}

@@ -1,3 +1,9 @@
+## Beta 11 — PDF crash fix, roast history + Continue Reading fix
+- Fixed an out-of-memory crash when opening a PDF tab with many PDFs: cover thumbnails are now generated two at a time from just the first page (previously every PDF was downloaded in full at once) and memory is freed after each one.
+- New "Index the text inside PDFs too" toggle in Preferences → Search Index — turn it off for image-heavy PDFs (scans, craft patterns) to keep index builds fast. Titles and tags stay searchable either way.
+- The roast moved to the Insights page and roasts are now saved — reread past roasts and delete them anytime.
+- Continue Reading now shows only books you actually marked as "reading" — books you merely opened no longer pile up there.
+
 ## Beta 10 — sharper roasts
 - The roast now knows what you're currently reading and recently finished, so it won't mock you for not starting a series you're actually in the middle of.
 - Every roast is different now: a random angle per click, a rotating sample of your unread shelf, and a hotter model temperature.

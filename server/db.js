@@ -137,6 +137,9 @@ class Store {
       default_view: 'grid',
       kindle_email: '',
       kindle_mode:  'web',
+      // Index PDF full text for search — off for image-heavy PDF libraries
+      // (e.g. craft patterns), where extraction is slow and finds no text.
+      index_pdf_text: true,
     }
     let changed = false
     for (const [k, v] of Object.entries(defaults)) {

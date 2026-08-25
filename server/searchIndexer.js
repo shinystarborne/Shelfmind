@@ -60,9 +60,12 @@ async function indexOne(store, kind, item) {
 }
 
 async function indexAll(store, onProgress, force = false) {
+  // PDF text extraction is heavy (whole file read + parse per doc) and useless
+  // for image-only PDFs like scanned patterns — gated behind a preference.
+  const indexPdfs = store.getPref('index_pdf_text') !== false
   const items = [
     ...store.getUnindexedBooks(force).map(b => ({ kind: 'book', item: b })),
-    ...store.getUnindexedPdfDocs(force).map(d => ({ kind: 'pdf', item: d })),
+    ...(indexPdfs ? store.getUnindexedPdfDocs(force).map(d => ({ kind: 'pdf', item: d })) : []),
   ]
   const total = items.length
   let done = 0, success = 0
