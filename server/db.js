@@ -1302,6 +1302,10 @@ class Store {
       d.last_page_updated_at = Date.now()
     }
     if (typeof fields.zoom === 'number') d.zoom = fields.zoom
+    // Reader-side per-doc state: named row counters and page bookmarks
+    if (fields.row_counters !== undefined) d.row_counters = Array.isArray(fields.row_counters) ? fields.row_counters : []
+    if (fields.bookmarks    !== undefined) d.bookmarks    = Array.isArray(fields.bookmarks)    ? fields.bookmarks    : []
+    if (typeof fields.active_counter === 'string' || fields.active_counter === null) d.active_counter = fields.active_counter
     writeJson(this._pdfDocsFile, this.pdfDocs)
     return d
   }

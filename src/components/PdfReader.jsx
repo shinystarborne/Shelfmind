@@ -3,6 +3,8 @@ import { API, useApp } from '../App'
 import { GlobalWorkerOptions, getDocument, TextLayer } from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import PdfPinPanel from './PdfPinPanel'
+import PdfRowClicker from './PdfRowClicker'
+import PdfContentsPanel from './PdfContentsPanel'
 
 // Same pin note as pdfThumbnail.js: pdfjs-dist 4.x for this Electron version
 GlobalWorkerOptions.workerSrc = workerUrl
@@ -94,6 +96,16 @@ export default function PdfReader({ doc: pdfDoc, target, onClose, onOpenAlongsid
     return () => { alive = false }
   }, [pdfDoc.id])
   const pins = docMeta?.pins || []
+
+  // Merge fields into docMeta locally — persistence is each panel's own job
+  // (PdfRowClicker / PdfContentsPanel PUT what they change, debounced).
+  const patchDocMeta = useCallback((fields) => {
+    setDocMeta(m => (m ? { ...m, ...fields } : m))
+  }, [])
+
+  // ── Row clicker + contents/bookmarks panels ──
+  const [clickerOpen,  setClickerOpen]  = useState(false)
+  const [contentsOpen, setContentsOpen] = useState(false)
 
   // ── Pinned reference crops: draw-a-rectangle mode + which pins are open ──
   const [pinMode, setPinMode]         = useState(false)
@@ -603,6 +615,19 @@ export default function PdfReader({ doc: pdfDoc, target, onClose, onOpenAlongsid
     }
   }, [renderPage, searchQuery])
 
+  // Jump to a page number — used by the contents panel (outline + bookmarks).
+  const jumpToPage = useCallback(async (page) => {
+    const idx = page - 1
+    if (idx < 0 || idx >= dims.length) return
+    await renderPage(idx)
+    const el = pageElsRef.current[idx]?.parentElement
+    const c  = containerRef.current
+    if (el && c) {
+      if (viewModeRef.current === 'swipe') el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' })
+      else c.scrollTo({ top: el.offsetTop - PAGE_GAP, behavior: 'smooth' })
+    }
+  }, [renderPage, dims.length])
+
   // Jump to the current hit whenever it changes (typing, prev/next, or Enter)
   useEffect(() => {
     if (!searchOpen || pdfHits.length === 0) return
@@ -692,6 +717,16 @@ export default function PdfReader({ doc: pdfDoc, target, onClose, onOpenAlongsid
           {numPages > 0 && (
             <span className="pdf-page-indicator">{curPage} / {numPages}</span>
           )}
+          <button
+            className={`reader-icon-btn ${contentsOpen ? 'active' : ''}`}
+            onClick={() => setContentsOpen(o => !o)}
+            title="Contents — PDF outline + your bookmarks"
+          >🔖</button>
+          <button
+            className={`reader-icon-btn ${clickerOpen ? 'active' : ''}`}
+            onClick={() => setClickerOpen(o => !o)}
+            title="Row clicker — count rows with an assignable key"
+          >🧶</button>
           <button
             className={`reader-icon-btn ${searchOpen ? 'active' : ''}`}
             onClick={() => (searchOpen ? closeSearch() : openSearch())}
@@ -842,7 +877,29 @@ export default function PdfReader({ doc: pdfDoc, target, onClose, onOpenAlongsid
         {viewMode === 'swipe' && (
           <button className="reader-arrow reader-arrow-right" onClick={() => turnPage(1)} title="Next page">›</button>
         )}
+        {contentsOpen && (
+          <PdfContentsPanel
+            docId={pdfDoc.id}
+            docMeta={docMeta}
+            patchDocMeta={patchDocMeta}
+            pdfDocRef={docRef}
+            docReady={numPages > 0}
+            curPage={curPage}
+            onJump={jumpToPage}
+            onClose={() => setContentsOpen(false)}
+          />
+        )}
       </div>
+
+      {clickerOpen && docMeta && (
+        <PdfRowClicker
+          docId={pdfDoc.id}
+          docMeta={docMeta}
+          patchDocMeta={patchDocMeta}
+          active={active}
+          onClose={() => setClickerOpen(false)}
+        />
+      )}
 
       {pins.filter(p => openPinIds.has(p.id)).map(pin => (
         <PdfPinPanel
