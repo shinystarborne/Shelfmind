@@ -3,6 +3,7 @@ import { API, useApp } from '../App'
 import { pdfCoverSrc } from './PdfCard'
 import { initials } from './BookCard'
 import AddToListMenu from './AddToListMenu'
+import { buildTagPayload } from '../lib/pdfAutoTag'
 
 // ── Tags editor (custom tags only — chips + input) ────────────────────────────
 function DocTags({ tags, onSave }) {
@@ -45,6 +46,30 @@ export default function PdfDrawer({ docId, onClose, onChanged, onRemoved }) {
   const [titleDraft,   setTitleDraft]   = useState('')
   const [confirmDel,   setConfirmDel]   = useState(false)
   const [showAddMenu,  setShowAddMenu]  = useState(false)
+  const [tagging,      setTagging]      = useState(false)
+
+  // ✨ Auto-tag this one pattern via the LLM (text first, vision for scans).
+  const autoTag = async () => {
+    if (tagging) return
+    setTagging(true)
+    try {
+      const payload = await buildTagPayload(`${API}/pdf-docs/${docId}/file`)
+      const res = await fetch(`${API}/pdf-docs/${docId}/auto-tag`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(payload),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+      setDoc(d => ({ ...d, auto: data.auto, tags: data.tags }))
+      onChanged?.()
+      toast('Pattern tagged ✨', 'success')
+    } catch (err) {
+      toast(`Auto-tag failed: ${err.message}`, 'error')
+    } finally {
+      setTagging(false)
+    }
+  }
 
   const load = () => fetch(`${API}/pdf-docs/${docId}`).then(r => r.json()).then(d => { setDoc(d); setNote(d.note || '') })
   useEffect(() => { load(); setEditingTitle(false); setConfirmDel(false) }, [docId])
@@ -158,6 +183,23 @@ export default function PdfDrawer({ docId, onClose, onChanged, onRemoved }) {
             <DocTags tags={doc.tags || []} onSave={tags => patch({ tags })} />
           </div>
 
+          {doc.auto?.tagged_at && !doc.auto.failed && (
+            <div className="drawer-section">
+              <div className="drawer-section-label">AI Pattern Info</div>
+              <div style={{ fontSize: 13, color: 'var(--text-soft)' }}>
+                🤖 {[
+                  doc.auto.craft,
+                  doc.auto.item_type,
+                  doc.auto.yarn_weight !== 'unknown' && doc.auto.yarn_weight,
+                  doc.auto.yarn,
+                ].filter(Boolean).join(' · ')}
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                  {` (${doc.auto.source === 'vision' ? 'from page images' : 'from text'})`}
+                </span>
+              </div>
+            </div>
+          )}
+
           <div className="drawer-section">
             <div className="drawer-section-label">Personal Note</div>
             <textarea
@@ -209,6 +251,9 @@ export default function PdfDrawer({ docId, onClose, onChanged, onRemoved }) {
               {showAddMenu && (
                 <AddToListMenu kind="pdf" id={doc.id} onClose={() => setShowAddMenu(false)} />
               )}
+              <button className="btn btn-secondary" onClick={autoTag} disabled={tagging || doc.missing}>
+                {tagging ? <span className="spin">↻</span> : '✨'} Auto-tag
+              </button>
               <button
                 className="btn btn-secondary"
                 onClick={() => { navigator.clipboard.writeText(doc.path); toast('Path copied', 'success') }}

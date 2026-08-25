@@ -9,6 +9,7 @@ const { startWatching } = require('./watcher')
 const { enrichAll, enrichOne } = require('./enricher')
 const { writeEpubMeta } = require('./epubWriter')
 const { indexAll, extractBookText, extractPdfText } = require('./searchIndexer')
+const { tagPattern } = require('./patternTagger')
 const { profileAll, profileById } = require('./moodProfiler')
 const { suggest } = require('./moodSuggester')
 const { roast } = require('./roast')
@@ -1259,6 +1260,33 @@ function startServer(port = 3001) {
       }
       store.savePdfAnnotations(req.params.id, pages)
       res.json({ ok: true })
+    })
+
+    // AI pattern tagging — the renderer extracts first-page text (or renders
+    // page images for scans) and posts it here; we call the LLM and save the
+    // normalized result + prefixed tags onto the doc.
+    app.post('/api/pdf-docs/:id/auto-tag', async (req, res) => {
+      const doc = store.getPdfDoc(req.params.id)
+      if (!doc) return res.status(404).json({ error: 'Not found' })
+      if (!store.getPref('openrouter_key') && !store.getPref('llm_base_url')) {
+        return res.status(400).json({ error: 'No LLM configured — set an OpenRouter key or a local LLM URL in Preferences' })
+      }
+      const { title, text, images } = req.body || {}
+      if (!text && !(Array.isArray(images) && images.length)) {
+        return res.status(400).json({ error: 'text or images required' })
+      }
+      try {
+        const { auto, tags } = await tagPattern(store.getPrefs(), { title: title || doc.title, text, images })
+        const merged = [...new Set([...(doc.tags || []), ...tags])]
+        store.updatePdfDoc(doc.id, { auto, tags: merged })
+        res.json({ auto, tags: merged })
+      } catch (err) {
+        // Keep a previous successful result; only mark failure when there's none.
+        if (!doc.auto?.tagged_at || doc.auto.failed) {
+          store.updatePdfDoc(doc.id, { auto: { failed: true, error: err.message, tagged_at: Date.now() } })
+        }
+        res.status(502).json({ error: err.message })
+      }
     })
 
     // Raw PDF bytes — used client-side by pdf.js to render a cover thumbnail

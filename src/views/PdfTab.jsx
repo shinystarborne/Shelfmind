@@ -1,7 +1,8 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { API, useApp } from '../App'
 import PdfCard from '../components/PdfCard'
 import PdfDrawer from '../components/PdfDrawer'
+import { buildTagPayload, needsTagging } from '../lib/pdfAutoTag'
 
 // ── Main view ─────────────────────────────────────────────────────────────────
 export default function PdfTab({ tabId, onTabDeleted, onTabUpdated }) {
@@ -16,6 +17,8 @@ export default function PdfTab({ tabId, onTabDeleted, onTabUpdated }) {
   const [pathDraft,  setPathDraft]  = useState('')
   const [showPathInput, setShowPathInput] = useState(false)
   const [selectedId, setSelectedId] = useState(null)
+  const [tagging,    setTagging]    = useState(null)   // { current, total, title, failed } while an auto-tag pass runs
+  const tagStopRef = useRef(false)
 
   const loadTab = () => {
     fetch(`${API}/pdf-tabs/${tabId}`)
@@ -25,6 +28,53 @@ export default function PdfTab({ tabId, onTabDeleted, onTabUpdated }) {
   }
 
   useEffect(() => { loadTab(); setSearch(''); setEditing(false); setConfirmDel(false); setSelectedId(null) }, [tabId])
+
+  // ✨ Auto-tag: one click tags every untagged pattern in the tab via the LLM.
+  // Sequential on purpose — a local model is the bottleneck, not the parsing.
+  const autoTagAll = async () => {
+    if (tagging) return
+    const docs = tab.docs.filter(d => !d.missing && needsTagging(d))
+    if (!docs.length) { toast('Everything here is already tagged', 'success'); return }
+    tagStopRef.current = false
+    let failed = 0, lastError = null, sameErrorCount = 0
+    setTagging({ current: 0, total: docs.length, title: '', failed: 0 })
+    for (let i = 0; i < docs.length; i++) {
+      if (tagStopRef.current) break
+      const d = docs[i]
+      setTagging({ current: i + 1, total: docs.length, title: d.title, failed })
+      try {
+        const payload = await buildTagPayload(`${API}/pdf-docs/${d.id}/file`)
+        const res = await fetch(`${API}/pdf-docs/${d.id}/auto-tag`, {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify(payload),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+        setTab(t => t ? { ...t, docs: t.docs.map(x => x.id === d.id ? { ...x, auto: data.auto, tags: data.tags } : x) } : t)
+        sameErrorCount = 0
+      } catch (err) {
+        failed++
+        setTab(t => t ? { ...t, docs: t.docs.map(x => x.id === d.id ? { ...x, auto: { failed: true, error: err.message } } : x) } : t)
+        // Same error 5× in a row = config problem — stop instead of failing 691 times.
+        sameErrorCount = err.message === lastError ? sameErrorCount + 1 : 1
+        lastError = err.message
+        if (sameErrorCount >= 5) {
+          toast(`Same error 5 times in a row — stopping. ${err.message}`, 'error')
+          break
+        }
+      }
+    }
+    const done = !tagStopRef.current
+    setTagging(null)
+    if (done) {
+      toast(failed
+        ? `Auto-tag finished — ${docs.length - failed}/${docs.length} tagged, ${failed} failed`
+        : `Auto-tagged ${docs.length} pattern${docs.length !== 1 ? 's' : ''} ✨`,
+        failed ? 'error' : 'success')
+      onTabUpdated?.()
+    }
+  }
 
   const scanFolder = async () => {
     if (scanning) return
@@ -166,6 +216,21 @@ export default function PdfTab({ tabId, onTabDeleted, onTabUpdated }) {
               )}
             </div>
             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{tab.docs.length} PDF{tab.docs.length !== 1 ? 's' : ''}</span>
+            {tagging ? (
+              <>
+                <span style={{ fontSize: 12, color: 'var(--text-muted)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={tagging.title}>
+                  ✨ {tagging.current}/{tagging.total}{tagging.failed ? ` (${tagging.failed} failed)` : ''}
+                </span>
+                <button className="btn btn-ghost" style={{ fontSize: 12, padding: '4px 10px' }} onClick={() => { tagStopRef.current = true }}>Cancel</button>
+              </>
+            ) : (
+              <button
+                className="btn btn-ghost"
+                style={{ fontSize: 12, padding: '4px 10px' }}
+                onClick={autoTagAll}
+                title="AI: tag untagged patterns with craft, item type and yarn weight"
+              >✨ Auto-tag</button>
+            )}
             {tab.folder_path && (
               <button
                 className="btn btn-ghost"
