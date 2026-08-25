@@ -3247,6 +3247,35 @@ h3 { font-size: 18px; }
 }
 .pdf-bookmark-item .reader-icon-btn { font-size: 10px; padding: 2px 4px; }
 .pdf-bookmark-add { display: flex; gap: 4px; padding: 4px 8px; }
+.pdf-contents-tabs { display: flex; gap: 2px; }
+.pdf-contents-tab {
+  background: none;
+  border: none;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--r-soft);
+  cursor: pointer;
+}
+.pdf-contents-tab:hover { color: var(--r-fg); }
+.pdf-contents-tab.active {
+  background: color-mix(in srgb, var(--r-accent) 18%, transparent);
+  color: var(--r-fg);
+  font-weight: 700;
+}
+.pdf-bookmark-add-btn {
+  display: block;
+  width: calc(100% - 16px);
+  margin: 6px 8px;
+  padding: 8px;
+  background: color-mix(in srgb, var(--r-accent) 16%, transparent);
+  border: 1px dashed var(--r-accent);
+  border-radius: 8px;
+  color: var(--r-fg);
+  font-size: 13px;
+  cursor: pointer;
+}
+.pdf-bookmark-add-btn:hover { background: color-mix(in srgb, var(--r-accent) 28%, transparent); }
 
 /* ── Split view: alongside / duplicate ──────────────────────────────────── */
 .pdf-split-actions {

@@ -105,8 +105,10 @@ export default function PdfRowClicker({ docId, docMeta, patchDocMeta, active, on
     return () => window.removeEventListener('keydown', onKey, true)
   }, [active, assigning, prefs.row_clicker_key, tick, savePrefs])
 
-  // Dragging (same pattern as PdfPinPanel)
+  // Dragging (same pattern as PdfPinPanel). Buttons inside the header must
+  // not start a drag — pointer capture on the header would swallow their click.
   const onDragPointerDown = useCallback((e) => {
+    if (e.target.closest('button')) return
     dragRef.current = { startX: e.clientX, startY: e.clientY, origX: pos.x, origY: pos.y }
     e.currentTarget.setPointerCapture?.(e.pointerId)
   }, [pos])
