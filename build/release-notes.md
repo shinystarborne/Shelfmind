@@ -1,3 +1,7 @@
+## Beta 13 — row clicker + jump-to bookmarks
+- New 🧶 row clicker in the PDF reader: named counters saved per pattern ("row", "sleeve 1", a whole second WIP…), one active at a time. Assign any keyboard key as the clicker — press it to count, Shift+key to count down — with a mechanical click sound (mutable) so you always know the row registered.
+- New 🔖 Contents panel in the PDF reader: jump using the book's own built-in outline when the PDF has one, plus your own named bookmarks ("Socks — chart B") that work in every PDF and are saved per pattern.
+
 ## Beta 12 — drag & drop onto lists
 - Drag any book or PDF card straight onto a reading list in the sidebar — the list highlights as you hover, drop to add. Works from the library grid, list view rows, and PDF tabs.
 - New ＋ button on card hover and an "Add to List" button in the book/PDF drawer: pick a list or create a new one right there. Perfect for a "knitting queue" list.
