@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { API, useApp } from '../App'
 import { coverSrc, initials, displayAuthor, formatFileSize } from './BookCard'
 import KindleModal from './KindleModal'
+import AddToListMenu from './AddToListMenu'
 
 function stripHtml(str) {
   if (!str) return ''
@@ -523,6 +524,7 @@ export default function BookDrawer({ bookId, onClose, onStatusChange, onRemoved 
   const [showRemove,  setShowRemove]  = useState(false)
   const [showRename,  setShowRename]  = useState(false)
   const [showConvert, setShowConvert] = useState(false)
+  const [showAddMenu, setShowAddMenu] = useState(false)
   const [enriching,   setEnriching]   = useState(false)
   const [uploading,    setUploading]    = useState(false)
   const [epubImages,   setEpubImages]   = useState(null)   // null=hidden, []=loading, [{...}]=loaded
@@ -857,6 +859,12 @@ export default function BookDrawer({ bookId, onClose, onStatusChange, onRemoved 
                 <button className="btn btn-primary" onClick={() => setShowKindle(true)}>
                   📱 Send to Kindle
                 </button>
+                <button className="btn btn-secondary" onClick={() => setShowAddMenu(s => !s)}>
+                  📋 Add to List
+                </button>
+                {showAddMenu && (
+                  <AddToListMenu kind="book" id={book.id} onClose={() => setShowAddMenu(false)} />
+                )}
                 <button className="btn btn-secondary" onClick={() => { setShowEdit(true); setShowRemove(false) }}>
                   ✏️ Edit Metadata
                 </button>

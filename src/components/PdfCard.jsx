@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { API } from '../App'
 import { initials, thumbSrc } from './BookCard'
 import { renderPdfThumbnail } from '../lib/pdfThumbnail'
+import AddToListMenu from './AddToListMenu'
+import { startItemDrag } from '../lib/listDnd'
 
 // Computed lazily (not at module scope) — `API` is reassigned once Electron
 // reports the actual port, and reading it at import time can also race a
@@ -16,6 +18,7 @@ export function pdfCoverSrc(doc, { thumb = false } = {}) {
 export default function PdfCard({ doc, selected, onClick }) {
   const [cover, setCover]         = useState(doc.cover || null)
   const [generating, setGenerating] = useState(false)
+  const [showAddMenu, setShowAddMenu] = useState(false)
   const triedRef = useRef(false)
 
   useEffect(() => { setCover(doc.cover || null); triedRef.current = false }, [doc.id, doc.cover])
@@ -59,7 +62,19 @@ export default function PdfCard({ doc, selected, onClick }) {
   }
 
   return (
-    <div className="book-card-wrap">
+    <div
+      className="book-card-wrap"
+      draggable
+      onDragStart={e => startItemDrag(e, 'pdf', doc.id)}
+    >
+      <button
+        className="card-add-btn"
+        title="Add to a list"
+        onClick={e => { e.stopPropagation(); setShowAddMenu(s => !s) }}
+      >＋</button>
+      {showAddMenu && (
+        <AddToListMenu kind="pdf" id={doc.id} onClose={() => setShowAddMenu(false)} />
+      )}
       <div
         className={`book-card ${selected ? 'selected' : ''}`}
         onClick={() => onClick(doc)}

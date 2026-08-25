@@ -12,6 +12,8 @@ import Quotes from './views/Quotes'
 import UpdateNotesModal from './components/UpdateNotesModal'
 import AudiobookPlayer from './components/AudiobookPlayer'
 import { applyPalette, syncTitlebar } from './lib/theme'
+import { hasItemPayload, readItemPayload } from './lib/listDnd'
+import { addToList } from './components/AddToListMenu'
 
 // When loaded in Electron (file://) hostname is empty — fall back to localhost.
 // When opened in a browser via QR code the hostname is the LAN IP, so API calls go to the right machine.
@@ -128,6 +130,7 @@ export default function App() {
   const refreshLibrary    = useCallback(() => _refreshLibraryFn(), [_refreshLibraryFn])
   const [lists, setLists] = useState([])
   const [activeListId, setActiveListId] = useState(null)
+  const [dropTargetListId, setDropTargetListId] = useState(null)
   const [shelves, setShelves] = useState([])
   const [activeShelfId, setActiveShelfId] = useState(null)
   const [continueSeriesCount, setContinueSeriesCount] = useState(0)
@@ -225,6 +228,30 @@ export default function App() {
   const loadLists = useCallback(() => {
     fetch(`${API}/lists`).then(r => r.json()).then(setLists).catch(() => {})
   }, [])
+
+  // Drag & drop from book/PDF cards onto a sidebar list — see lib/listDnd.js.
+  const listDropProps = (list) => ({
+    onDragOver: (e) => {
+      if (!hasItemPayload(e)) return
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'copy'
+      setDropTargetListId(list.id)
+    },
+    onDragLeave: () => setDropTargetListId(id => (id === list.id ? null : id)),
+    onDrop: async (e) => {
+      setDropTargetListId(null)
+      const item = readItemPayload(e)
+      if (!item) return
+      e.preventDefault()
+      try {
+        await addToList(list.id, item.kind, item.id)
+        toast(`Added to ${list.name}`, 'success')
+        loadLists()
+      } catch {
+        toast('Could not add to list', 'error')
+      }
+    },
+  })
 
   const loadShelves = useCallback(() => {
     fetch(`${API}/smart-shelves`).then(r => r.json()).then(setShelves).catch(() => {})
@@ -360,6 +387,7 @@ export default function App() {
       updateState, checkForUpdate, downloadUpdate, installUpdateNow, dismissUpdateBanner,
       shelves, activeShelfId, setActiveShelfId, loadShelves, continueSeriesCount,
       player, openAudiobook, closePlayer, setPlayerIndex,
+      lists, loadLists,
     }}>
       <div className={`app-shell${sidebarOpen ? '' : ' sidebar-collapsed'}`}>
         {/* Sidebar */}
@@ -410,8 +438,9 @@ export default function App() {
               {lists.map(l => (
                 <button
                   key={l.id}
-                  className={`nav-item ${view === 'list' && activeListId === l.id ? 'active' : ''}`}
+                  className={`nav-item ${view === 'list' && activeListId === l.id ? 'active' : ''} ${dropTargetListId === l.id ? 'nav-drop-target' : ''}`}
                   onClick={() => { setActiveListId(l.id); setView('list') }}
+                  {...listDropProps(l)}
                 >
                   <span className="nav-icon">📋</span>
                   <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.name}</span>
