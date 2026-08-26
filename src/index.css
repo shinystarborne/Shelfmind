@@ -2175,7 +2175,16 @@ h3 { font-size: 18px; }
   border-bottom: 1px solid var(--r-border);
   transform: translateY(-100%);
   opacity: 0;
+  /* Re-add a window-drag strip while reading: the blanket no-drag on .reader
+     above (needed so the covered Library topbar's drag region can't eat
+     reader button clicks) would otherwise leave zero draggable surface and
+     the window couldn't be moved at all with a book/PDF open. Interactive
+     children are carved back out below so buttons keep working. */
+  -webkit-app-region: drag;
 }
+.reader-topbar button,
+.reader-topbar input,
+.reader-topbar .pdf-sibling-picker { -webkit-app-region: no-drag; }
 .reader-bottombar {
   bottom: 0;
   padding: 10px 20px;
