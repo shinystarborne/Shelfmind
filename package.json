@@ -1,6 +1,6 @@
 {
   "name": "shelfmind",
-  "version": "1.10.3-beta.17",
+  "version": "1.10.3-beta.18",
   "author": "Shiny Starborne",
   "description": "Your personal ebook library, beautifully organised",
   "main": "electron/main.js",
