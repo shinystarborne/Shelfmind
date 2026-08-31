@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react'
 import { API, useApp } from '../App'
-import { GlobalWorkerOptions, getDocument, TextLayer } from 'pdfjs-dist'
+import { GlobalWorkerOptions, getDocument, TextLayer, AnnotationLayer } from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import PdfPinPanel from './PdfPinPanel'
 import PdfRowClicker from './PdfRowClicker'
@@ -194,6 +194,51 @@ export default function PdfReader({ doc: pdfDoc, target, onClose, onOpenAlongsid
   const textContentCacheRef  = useRef([])   // per-page page.getTextContent() result, cached across zoom
   const activeQueryRef       = useRef('')   // current search query, read inside renderPage's closure
 
+  // ── Clickable links (pdf.js AnnotationLayer, Link annotations only) ─────────
+  const linkLayerElsRef      = useRef([])   // per-page container divs for the link layer
+  const linkAnnotCacheRef    = useRef([])   // per-page getAnnotations() result, cached across zoom
+  const jumpToPageRef        = useRef(null) // wired after jumpToPage is defined
+
+  // Minimal pdf.js link service — only what the AnnotationLayer's link
+  // annotations actually call. External URLs go to the system browser;
+  // internal destinations/named actions navigate inside this reader.
+  const makeLinkService = useCallback(() => ({
+    externalLinkEnabled: true,
+    addLinkAttributes(link, url) {
+      link.href = url
+      link.rel = 'noopener noreferrer nofollow'
+      link.title = url
+      link.onclick = e => {
+        e.preventDefault()   // don't let Electron open a new BrowserWindow
+        if (window.electronAPI?.openExternal) window.electronAPI.openExternal(url)
+        else window.open(url, '_blank', 'noopener')
+        return false
+      }
+    },
+    getDestinationHash: dest => `#${typeof dest === 'string' ? dest : ''}`,
+    getAnchorUrl: anchor => anchor || '#',
+    async goToDestination(dest) {
+      const d = docRef.current
+      if (!d) return
+      let arr = dest
+      if (typeof dest === 'string') { try { arr = await d.getDestination(dest) } catch { return } }
+      if (!Array.isArray(arr)) return
+      const ref = arr[0]
+      let page = null
+      if (typeof ref === 'number') page = ref + 1
+      else if (ref) { try { page = (await d.getPageIndex(ref)) + 1 } catch { /* unresolvable ref */ } }
+      if (page) jumpToPageRef.current?.(page)
+    },
+    executeNamedAction(action) {
+      const cur = curPageRef.current, total = pageElsRef.current.length
+      if (action === 'NextPage')       jumpToPageRef.current?.(Math.min(total, cur + 1))
+      else if (action === 'PrevPage')  jumpToPageRef.current?.(Math.max(1, cur - 1))
+      else if (action === 'FirstPage') jumpToPageRef.current?.(1)
+      else if (action === 'LastPage')  jumpToPageRef.current?.(total)
+    },
+    executeSetOCGState() {},
+  }), [])
+
   const th = THEMES[prefs.theme === 'dark' ? 'dark' : 'light']
 
   // ── Load document ───────────────────────────────────────────────────────────
@@ -271,10 +316,29 @@ export default function PdfReader({ doc: pdfDoc, target, onClose, onOpenAlongsid
         textLayersRef.current[idx] = layer
         if (activeQueryRef.current.length >= 2) highlightQueryOnLayer(layer, activeQueryRef.current)
       }
+
+      // Link layer — hyperlink + internal GoTo annotations as real clickable
+      // <a> elements. Link subtype only: no forms, popups, or ink widgets.
+      // Same scale-s viewport as the text layer so rects land in the same
+      // CSS-pixel box (annotation sections are positioned in % of page size).
+      const linkContainer = linkLayerElsRef.current[idx]
+      if (linkContainer) {
+        linkContainer.replaceChildren()
+        let annots = linkAnnotCacheRef.current[idx]
+        if (!annots) {
+          annots = (await page.getAnnotations({ intent: 'display' })).filter(a => a.subtype === 'Link')
+          linkAnnotCacheRef.current[idx] = annots
+        }
+        if (annots.length) {
+          const annotLayer = new AnnotationLayer({ div: linkContainer, page, viewport: page.getViewport({ scale: s }) })
+          await annotLayer.render({ annotations: annots, linkService: makeLinkService(), renderForms: false })
+          if (renderedRef.current[idx] !== s) return   // zoom changed mid annotation-layer render
+        }
+      }
     } catch (err) {
       if (err?.name !== 'RenderingCancelledException') renderedRef.current[idx] = null
     }
-  }, [])
+  }, [makeLinkService])
 
   // Render every page whose box is near the viewport. Driven by scroll/zoom
   // directly (not IntersectionObserver — Chromium throttles IO and rAF when
@@ -799,6 +863,7 @@ export default function PdfReader({ doc: pdfDoc, target, onClose, onOpenAlongsid
       else c.scrollTo({ top: el.offsetTop - PAGE_GAP, behavior: 'smooth' })
     }
   }, [renderPage, dims.length])
+  jumpToPageRef.current = jumpToPage
 
   // One-click bookmark of the current page — default name, rename later in
   // the contents panel. Zero dialogs: speed beats ceremony here.
@@ -1068,6 +1133,10 @@ export default function PdfReader({ doc: pdfDoc, target, onClose, onOpenAlongsid
                 <div
                   className="pdf-page-text textLayer"
                   ref={el => { textLayerElsRef.current[i] = el }}
+                />
+                <div
+                  className="pdf-link-layer annotationLayer"
+                  ref={el => { linkLayerElsRef.current[i] = el }}
                 />
                 <div
                   className={`pdf-pin-draw-layer ${pinMode ? 'active' : ''}`}
