@@ -1713,6 +1713,29 @@ h3 { font-size: 18px; }
   width: 110px;
   cursor: pointer;
 }
+/* Continue Reading cards get a hover-visible ✕ to drop an item off the list */
+.continue-reading-card { position: relative; }
+.continue-remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(30, 24, 20, 0.72);
+  color: #fff;
+  font-size: 10px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.continue-reading-card:hover .continue-remove { opacity: 1; }
+.continue-remove:hover { background: rgba(160, 50, 50, 0.9); }
 .read-next-card img,
 .read-next-card .read-next-ph {
   width: 110px;
