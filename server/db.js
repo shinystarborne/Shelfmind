@@ -591,7 +591,9 @@ class Store {
 
     const pdfs = []
     for (const d of this.pdfDocs) {
-      if (!d.last_page || !fs.existsSync(d.path)) continue
+      // Page 1 means "opened but never really read" (the reader saves
+      // last_page=1 on a close-without-scroll) — not worth a resume slot.
+      if (!d.last_page || d.last_page <= 1 || !fs.existsSync(d.path)) continue
       const tab = this.pdfTabs.find(t => t.id === d.tab_id)
       pdfs.push({
         ...d,
@@ -1300,8 +1302,11 @@ class Store {
     if (fields.note   !== undefined) d.note  = fields.note
     if (fields.tags   !== undefined) d.tags  = Array.isArray(fields.tags) ? fields.tags : []
     if (fields.tab_id !== undefined && this.pdfTabs.some(t => t.id === fields.tab_id)) d.tab_id = fields.tab_id
-    // In-app PDF viewer position
-    if (typeof fields.last_page === 'number') {
+    // In-app PDF viewer position; null clears it (Continue Reading ✕)
+    if (fields.last_page === null) {
+      delete d.last_page
+      delete d.last_page_updated_at
+    } else if (typeof fields.last_page === 'number') {
       d.last_page = Math.max(1, Math.round(fields.last_page))
       d.last_page_updated_at = Date.now()
     }

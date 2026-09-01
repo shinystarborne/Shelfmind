@@ -258,6 +258,18 @@ function ContinueReading({ refreshKey }) {
 
   useEffect(() => { load() }, [load, refreshKey])
 
+  // ✕ removes the state that put the item on this list: a book goes back to
+  // 'unread', a PDF's saved position is cleared (next open starts at page 1).
+  const removeItem = useCallback(async (item) => {
+    const isBook = item.kind === 'book'
+    await fetch(isBook ? `${API}/books/${item.id}/status` : `${API}/pdf-docs/${item.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(isBook ? { status: 'unread' } : { last_page: null }),
+    }).catch(() => {})
+    load()
+  }, [load])
+
   const total = items.books.length + items.pdfs.length
   if (total === 0) return null
 
@@ -298,7 +310,7 @@ function ContinueReading({ refreshKey }) {
                     const pos = item.reading_position
                     openReader(item, pos ? { spine: pos.spine, frac: pos.frac } : null)
                   } else {
-                    openPdfReader({ id: item.id, title: item.title }, { page: item.last_page })
+                    openPdfReader({ id: item.id, title: item.title, last_page: item.last_page, zoom: item.zoom }, { page: item.last_page })
                   }
                 }}
               >
@@ -306,6 +318,11 @@ function ContinueReading({ refreshKey }) {
                   ? <img src={src} alt={item.title} />
                   : <div className="read-next-ph">{init}</div>
                 }
+                <button
+                  className="continue-remove"
+                  title="Remove from Continue Reading"
+                  onClick={e => { e.stopPropagation(); removeItem(item) }}
+                >✕</button>
                 <div className="read-next-title">{item.title}</div>
                 <div className="read-next-author">{subtitle}</div>
                 {progress > 0 && (
